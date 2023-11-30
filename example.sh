@@ -12,6 +12,6 @@ export PTFLOW_COMPARISON_DATA=/global/cfs/cdirs/mp107/exgal/data/IllustrisTNG/TN
 
 cd $SCRATCH
 if [ -d ptflow_test ] ; then mv ptflow_test ptflow_test.bak ; fi
-git clone https://github.com/marcelo-alvarez/ptflow.git ptflow_test
+git clone git@github.com:marcelo-alvarez/ptflow.git ptflow_test
 cd ptflow_test
 python runptflow.py
