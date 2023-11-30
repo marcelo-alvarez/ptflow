@@ -65,18 +65,19 @@ def optfromsample(args,params,config):
             print(f" {i:>3}/{nval:<3} curloss: {closs:>11.3f} alpha: {params['alpha']:>5.2f} logM0: {np.log10(params['M0']):>5.2f} lptsigma: {params['lptsigma']:>4.2f} minloss: {loss[0]:>11.3f}")
         print()
 
-    data = np.load(lossfile)
+    if os.path.isfile(lossfile):
+        data = np.load(lossfile)
 
-    alpha    = data['alpha']
-    M0       = data['M0']
-    lptsigma = data['lptsigma']
+        alpha    = data['alpha']
+        M0       = data['M0']
+        lptsigma = data['lptsigma']
 
-    params['alpha']    = alpha[0]
-    params['M0']       = M0[0]
-    params['lptsigma'] = lptsigma[0]
+        params['alpha']    = alpha[0]
+        params['M0']       = M0[0]
+        params['lptsigma'] = lptsigma[0]
 
-    print(f"running for optimal sampled parameters alpha: {alpha[0]:>5.2f} logM0: {np.log10(M0[0]):>5.2f} lptsigma: {lptsigma[0]:>4.2f}")
-    aux, [loss, rholpt, rhopfl, mask] = ptf.flowloss(params,config)
+        print(f"running for optimal sampled parameters alpha: {alpha[0]:>5.2f} logM0: {np.log10(M0[0]):>5.2f} lptsigma: {lptsigma[0]:>4.2f}")
+        aux, [loss, rholpt, rhopfl, mask] = ptf.flowloss(params,config)
 
-    pfa.analyze(params,config,rholpt,rhopfl,mask,opt=True)
-    print()
+        pfa.analyze(params,config,rholpt,rhopfl,mask,opt=True)
+        print()
