@@ -1,22 +1,12 @@
-import sys
-import jax
-import jax.numpy as jnp
-import numpy as np
-
 import ptflow   as ptf
 import analysis as pfa
 import sampling as pfs
 
-args   = ptf.parsecommandline()
-
-config = ptf.configfromargs(args)
-params = ptf.paramsfromargs(args)
-
-config, params = ptf.setupflowprofile(args,config,params)
+config, params = ptf.initialize()
 
 # fiducial model from command line / default
-aux, [loss, rholpt, rhopfl, mask] = ptf.flowloss(params,config)
-pfa.analyze(params,config,rholpt,rhopfl,mask)
+loss, [rhopfl, mask] = ptf.flowloss(config,params)
+pfa.analyze(config,params,rhopfl,mask)
 
 # find optimal parameters in sample parameter space
-pfs.optfromsample(args,params,config)
+pfs.optfromsample(config,params)

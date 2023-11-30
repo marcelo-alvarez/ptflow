@@ -6,7 +6,7 @@ from matplotlib import gridspec
 from matplotlib.colors import LogNorm
 from mutil import heavileft, crosspower, powerspectrum
 
-def analyze(params,config,rholpt,rhopfl,mask,fmin=None,fmax=None,opt=False):
+def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
 
     plt.rcParams['figure.figsize']    = [10, 5]
     plt.rcParams["contour.linewidth"] = 0.5
@@ -45,15 +45,16 @@ def analyze(params,config,rholpt,rhopfl,mask,fmin=None,fmax=None,opt=False):
 
     deltai = config.loadfield('deltai',scalegrowth=True )
     rhodmg = config.loadfield('rhodmg',scalegrowth=True )
-
-    rholpt = np.array(rholpt)
-    rhopfl = np.array(rhopfl)
+    rholpt = config.rholpt
 
     deltai = deltai[si,sj,sk].mean(axis=0)
     mask   =   mask[si,sj,sk].mean(axis=0)
     rholpt = rholpt[si,sj,sk].mean(axis=0)
     rhopfl = rhopfl[si,sj,sk].mean(axis=0)
     rhodmg = rhodmg[si,sj,sk].mean(axis=0) * (config.N/2500)**3
+
+    rholpt = np.array(rholpt)
+    rhopfl = np.array(rhopfl)
 
     rms = np.log10(rhodmg[rhodmg>0]).var()**0.5
     mean = np.log10(rhodmg[rhodmg>0]).mean()

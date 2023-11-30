@@ -7,7 +7,7 @@ nm    = 20
 logM1 = 10.
 logM2 = 15.
 zoom  = 0.666
-kmax  = 10.0
+kmax0 = 6
 fltr  = "matter"
 ctype = "int8"
 mtype = "int8"
@@ -17,7 +17,8 @@ soft  = False
 test  = False
 sampl = True
 sqrtN = 5
-tdown = True
+ctdwn = True
+ftdwn = False
 flowl = True
 
 # model parameters
@@ -25,5 +26,5 @@ d0    =  200
 gamma =  1.1
 beta  = -2.9
 alpha = 0.0
-M0    = 1e13
+logM0 = 13
 sigma = 1.0

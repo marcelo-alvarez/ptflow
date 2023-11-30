@@ -5,19 +5,19 @@ import analysis as pfa
 import pathlib
 import os.path
 
-def optfromsample(args,params,config):
+def optfromsample(config,params):
 
     datadir = "./data/"
     pathlib.Path(datadir).mkdir(parents=True, exist_ok=True)     
     lossfile  = datadir + 'loss.npz'
 
     print()
-    if args.sampl:
+    if config.sampl:
 
         from scipy.stats import qmc
 
         sampler = qmc.LatinHypercube(d=3, strength=2)
-        vparams = sampler.random(n=args.sqrtN**2)
+        vparams = sampler.random(n=config.sqrtN**2)
 
         #             alpha  log[M0] log[lptsigma]
         l_bounds = [  -0.5,     12,        -0.2]
@@ -42,8 +42,7 @@ def optfromsample(args,params,config):
             params['lptsigma'] = lptsigma
 
             config.verbose = False
-            arg, aux = ptf.flowloss(params,config)
-            closs,rholpt,rhopfl,mask = aux
+            closs, aux = ptf.flowloss(config,params)
             sampledparamsl.append([alpha,M0,lptsigma,closs])
 
             sampledparams = np.asarray(sampledparamsl)
@@ -78,7 +77,7 @@ def optfromsample(args,params,config):
         params['lptsigma'] = lptsigma[0]
 
         print(f"running for optimal sampled parameters alpha: {alpha[0]:>5.2f} logM0: {np.log10(M0[0]):>5.2f} lptsigma: {lptsigma[0]:>4.2f}")
-        aux, [loss, rholpt, rhopfl, mask] = ptf.flowloss(params,config)
+        loss, [rhopfl,mask] = ptf.flowloss(config,params)
 
-        pfa.analyze(params,config,rholpt,rhopfl,mask,opt=True)
+        pfa.analyze(config,params,rhopfl,mask,opt=True)
         print()

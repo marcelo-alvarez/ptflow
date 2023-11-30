@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import os.path
 from mutil import convolve
 import os
+import gc
 
 class PTflowConfig:
     '''PTflowConfig'''
@@ -18,6 +19,7 @@ class PTflowConfig:
         # simulation information     
         boxsize = kwargs.get('boxsize',205.0) # ICs box size in Mpc/h
         N       = kwargs.get('N',      625)   # ICs dimension
+        N0      = kwargs.get('N0',     625)   # ICs dimension (for scaling k0)
 
         # sub-box parameters
         nx = kwargs.get('nx', N//5) # sbox 1st grid dimension
@@ -28,19 +30,20 @@ class PTflowConfig:
         self.logM1     = kwargs.get('logM1', 10.0)
         self.logM2     = kwargs.get('logM2', 15.0)
         self.zoom      = kwargs.get( 'zoom', 0.7)
-        self.kmax      = kwargs.get( 'kmax', 7.0)
+        self.kmax      = kwargs.get( 'kmax', 6.0)
         self.filter    = kwargs.get( 'fltr', "matter")
         self.cftype    = kwargs.get('ctype', "int8")
         self.masktype  = kwargs.get('mtype', "int8")
         self.exclusion = kwargs.get( 'excl', False)
         self.masking   = kwargs.get( 'mask', True)
         self.soft      = kwargs.get( 'soft', False)
+        self.ctdwn     = kwargs.get('ctdwn', True)
+        self.ftdwn     = kwargs.get('ftdwn', False)
+        self.flowlpt   = kwargs.get('flowl', True)
+        self.sampl     = kwargs.get('sampl', True)
+        self.sqrtN     = kwargs.get('sqrtN', 5)
 
         report = kwargs.get('report', False)
-
-        next = N
-
-        self.masses = jnp.logspace(self.logM2,self.logM1,self.nm)
 
         if N % 2 == 0:
             i0=N//2-nx//2-1
@@ -50,14 +53,6 @@ class PTflowConfig:
             i0=N//2-nx//2
             j0=N//2-ny//2
             k0=N//2-nz//2
-   
-        nxe = int(next/N*nx)
-        nye = int(next/N*ny)
-        nze = int(next/N*nz)
-
-        i0e = int(next/N*i0)
-        j0e = int(next/N*j0)
-        k0e = int(next/N*k0)
 
         # setup sub-box
         dsub      = boxsize / N
@@ -75,6 +70,7 @@ class PTflowConfig:
         # simulation box dimension
         self.boxsize   = boxsize
         self.N         = N
+        self.N0        = N0
 
         # training and validation subbox
         self.dsub      = dsub
@@ -96,7 +92,7 @@ class PTflowConfig:
         for s in sfields:
             self.fields[s] = {} 
             self.fields[s]['files'] = self.initdir+s+'_s2lpt'+'_'+str(N)
-        self.fields['rhodmg']['files'] = self.griddir+'dm_nx-'+str(next)+'_ngrid-'+str(next)+'.bin'
+        self.fields['rhodmg']['files'] = self.griddir+'dm_nx-'+str(N)+'_ngrid-'+str(N)+'.bin'
 
         # field data
         self.fields['deltai']['data'] = None
@@ -116,6 +112,19 @@ class PTflowConfig:
 
         # logging on by default
         self.verbose = True
+
+        # ordered mass scales for covergence finding and particle flow
+        mass = jnp.sort(jnp.logspace(self.logM1,self.logM2,self.nm))
+        self.cmass = jnp.flip(mass) if self.ctdwn else mass
+        self.fmass = jnp.flip(mass) if self.ftdwn else mass
+        self.cRLag   = (3*self.cmass/4./jnp.pi/self.rho)**(1./3.) * self.h
+        self.fRLag   = (3*self.fmass/4./jnp.pi/self.rho)**(1./3.) * self.h
+
+        # unsmoothed LPT positions
+        self.xl,self.yl,self.zl = self.advect(self.getslpt())
+
+        # binned LPT density
+        self.rholpt = self.binpoints(self.xl,self.yl,self.zl)
 
         if report:
             # print set up information
