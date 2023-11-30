@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import ptflow   as ptf
 import analysis as pfa
 import pathlib
+import os.path
 
 def optfromsample(args,params,config):
 
