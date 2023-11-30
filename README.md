@@ -14,6 +14,7 @@ Nonlinear modeling of small-scale matter field using perturbation theory
 % export PTFLOW_COMPARISON_DATA=/global/cfs/cdirs/mp107/exgal/data/IllustrisTNG/TNG300-1
 
 % cd $SCRATCH
+% rm -rf ptflow_test.bak
 % if [ -d ptflow_test ] ; then mv ptflow_test ptflow_test.bak ; fi
 % git clone git@github.com:marcelo-alvarez/ptflow.git ptflow_test
 % cd ptflow_test
