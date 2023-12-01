@@ -13,25 +13,26 @@ class PTflowConfig:
     '''PTflowConfig'''
     def __init__(self, **kwargs):
         # data location
-        self.initdir  = kwargs.get('datadirICs', os.environ["PTFLOW_COMPARISON_DATA"]+'/ICs/')
+        self.initdir = kwargs.get('datadirICs', os.environ["PTFLOW_COMPARISON_DATA"]+'/ICs/')
         self.griddir = kwargs.get('griddir',     os.environ["PTFLOW_COMPARISON_DATA"]+'/griddata/')
         self.partdir = kwargs.get('griddir',     os.environ["PTFLOW_COMPARISON_DATA"]+'/particledata/')
 
         # simulation information     
         boxsize = kwargs.get('boxsize',205.0) # ICs box size in Mpc/h
         N       = kwargs.get('N',      625)   # ICs dimension
-        N0      = kwargs.get('N0',     625)   # ICs dimension (for scaling k0)
+        N0      = kwargs.get('N0',     625)   # ICs dimension (for scaling to other N)
+        x2yz    = kwargs.get('x2yz',   1.0)   # ny/nx = nz/nx
 
-        # sub-box parameters
-        nx = kwargs.get('nx', N//5) # sbox 1st grid dimension
-        ny = kwargs.get('ny',    N) # sbox 2nd grid dimension
-        nz = kwargs.get('nz',    N) # sbox 3rd grid dimension
+        nx0 = kwargs.get('nx0', N0 // 5) # sbox 1st grid dimension scaled to N0
+        nx  = nx0 * N // N0 # sbox 1st grid dimension
+        ny  = nx * x2yz     # sbox 2nd grid dimension
+        nz  = nx * x2yz     # sbox 3rd grid dimension
 
         self.nm        = kwargs.get(   'nm', 20)
         self.logM1     = kwargs.get('logM1', 10.0)
         self.logM2     = kwargs.get('logM2', 15.0)
         self.zoom      = kwargs.get( 'zoom', 0.7)
-        self.kmax      = kwargs.get( 'kmax', 6.0)
+        self.kmax      = kwargs.get('kmax0', 6.0) * N / N0
         self.filter    = kwargs.get( 'fltr', "matter")
         self.cftype    = kwargs.get('ctype', "int8")
         self.masktype  = kwargs.get('mtype', "int8")
@@ -44,9 +45,10 @@ class PTflowConfig:
         self.sampl     = kwargs.get('sampl', True)
         self.sqrtN     = kwargs.get('sqrtN', 5)
         self.ploss     = kwargs.get('ploss', False)
-        report = kwargs.get('report', False)
 
-        sprms = kwargs.get('sprms','d0,gamma,sigma')
+        report = kwargs.get('report', True)
+
+        sprms = kwargs.get('sprms','d0,gamma,lptsigma')
 
         if N % 2 == 0:
             i0=N//2-nx//2-1
@@ -132,8 +134,6 @@ class PTflowConfig:
         # sample bounds set to default (user interface TBD)
         self.samplbnds = pfd.samplbnds
         self.samplprms = [s.strip() for s in sprms.split(",")]
-        for i in range(len(self.samplprms)):
-            if self.samplprms[i] == 'sigma': self.samplprms[i] = 'lptsigma'
 
         if report:
             # print set up information

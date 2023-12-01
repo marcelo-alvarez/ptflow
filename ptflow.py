@@ -15,84 +15,31 @@ def parsecommandline():
     parsbool = argparse.BooleanOptionalAction
     parser   = argparse.ArgumentParser(description='Commandline interface to ptflow')
 
-    # modeling configuration
-    parser.add_argument('--N',     default=pfd.N,     help=f'     xyz-dim [{pfd.N}]    ', type=int)
-    parser.add_argument('--N0',    default=pfd.N0,    help=f' fid xyz-dim [{pfd.N0}]   ', type=int)
-    parser.add_argument('--nx0',   default=pfd.nx0,   help=f'  xdim truth [{pfd.nx0}]  ', type=int)
-    parser.add_argument('--x2yz',  default=pfd.x2yz,  help=f' ydim / xdim [{pfd.x2yz}] ', type=int)
-    parser.add_argument('--nm',    default=pfd.nm,    help=f' # of scales [{pfd.nm}]   ', type=int)
-    parser.add_argument('--sqrtN', default=pfd.sqrtN, help=f' N^2 samples [{pfd.sqrtN}]', type=int)
-    parser.add_argument('--logM1', default=pfd.logM1, help=f'       logM1 [{pfd.logM1}]', type=float)
-    parser.add_argument('--logM2', default=pfd.logM2, help=f'       logM2 [{pfd.logM2}]', type=float)
-    parser.add_argument('--zoom',  default=pfd.zoom,  help=f'  train zoom [{pfd.zoom}] ', type=float)
-    parser.add_argument('--kmax0', default=pfd.kmax0, help=f'  train kmax [{pfd.kmax0}]', type=float)
-    parser.add_argument('--fltr',  default=pfd.fltr,  help=f'      filter [{pfd.fltr}] ', type=str)
-    parser.add_argument('--ctype', default=pfd.ctype, help=f' cfield type [{pfd.ctype}]', type=str)
-    parser.add_argument('--mtype', default=pfd.mtype, help=f'   mask type [{pfd.mtype}]', type=str)
-    parser.add_argument('--sprms', default=pfd.sprms, help=f'sample plist [{pfd.sprms}]', type=str)
-    parser.add_argument('--mask',  default=pfd.mask,  help=f'  do masking [{pfd.mask}] ', action=parsbool)
-    parser.add_argument('--excl',  default=pfd.excl,  help=f'do exclusion [{pfd.excl}] ', action=parsbool)
-    parser.add_argument('--soft',  default=pfd.soft,  help=f'thresholding [{pfd.soft}] ', action=parsbool)
-    parser.add_argument('--test',  default=pfd.test,  help=f'        test [{pfd.test}] ', action=parsbool)
-    parser.add_argument('--sampl', default=pfd.sampl, help=f'      sample [{pfd.sampl}]', action=parsbool)
-    parser.add_argument('--ctdwn', default=pfd.ctdwn, help=f'cfield order [{pfd.ctdwn}]', action=parsbool)
-    parser.add_argument('--ftdwn', default=pfd.ftdwn, help=f'  flow order [{pfd.ftdwn}]', action=parsbool)
-    parser.add_argument('--flowl', default=pfd.flowl, help=f'  inflow LPT [{pfd.flowl}]', action=parsbool)
-    parser.add_argument('--ploss', default=pfd.ploss, help=f'  pspec loss [{pfd.ploss}]', action=parsbool)
+    for params in pfd.allparams:
+        for param in pfd.allparams[params]:
+            pdval = pfd.allparams[params][param]['val']
+            ptype = pfd.allparams[params][param]['type']
+            pdesc = pfd.allparams[params][param]['desc']
+            if ptype == 'bool':
+                parser.add_argument('--'+param, default=pdval, help=f'{pdesc} [{pdval}]', action=parsbool)
+            else:
+                parser.add_argument('--'+param, default=pdval, help=f'{pdesc} [{pdval}]', type=ptype)
 
-    # fiducial parameters
-    parser.add_argument('--d0',    default=pfd.d0,    help=f'    deltavir [{pfd.d0}]   ', type=float)
-    parser.add_argument('--gamma', default=pfd.gamma, help=f'     M0 / Mh [{pfd.gamma}]', type=float)
-    parser.add_argument('--beta',  default=pfd.beta,  help=f'    ext plaw [{pfd.beta}] ', type=float)
-    parser.add_argument('--alpha', default=pfd.alpha, help=f' deltac tilt [{pfd.alpha}]', type=float)
-    parser.add_argument('--logM0', default=pfd.logM0, help=f'  tilt pivot [{pfd.logM0}] ', type=float)
-    parser.add_argument('--sigma', default=pfd.sigma, help=f'   Rs / RLag [{pfd.sigma}]', type=float)
-    
-    return parser.parse_args()
+    return vars(parser.parse_args())
 
-def configfromargs(args):
-    import config
- 
-    config = config.PTflowConfig(
-        report = True,
-        N     = args.N,
-        N0    = args.N0,
-        nx    = args.nx0  * (args.N // args.N0),
-        ny    = args.x2yz * args.nx0  * (args.N // args.N0),
-        nz    = args.x2yz * args.nx0  * (args.N // args.N0),
-        nm    = args.nm,
-        logM1 = args.logM1,
-        logM2 = args.logM2,
-        zoom  = args.zoom,
-        kmax  = args.kmax0 * args.N / args.N0,
-        fltr  = args.fltr,
-        ctype = args.ctype,
-        mtype = args.mtype,
-        mask  = args.mask,
-        excl  = args.excl,
-        soft  = args.soft,
-        ctdwn = args.ctdwn,
-        ftdwn = args.ftdwn,
-        flowl = args.flowl,
-        sampl = args.sampl,
-        sqrtN = args.sqrtN,
-        sprms = args.sprms,
-        ploss = args.ploss
+def parseallparams(allparams):
 
-    )
+    import defaults as pfd
 
-    return config
+    cparams = {}
+    params  = {}
+    for param in allparams:
+        if param in pfd.allparams['cparams']:
+            cparams[param] = allparams[param]
+        else:
+            params[param] = allparams[param]
 
-def paramsfromargs(args):
-    params = {
-        'd0'       : args.d0,
-        'gamma'    : args.gamma,
-        'beta'     : args.beta,
-        'alpha'    : args.alpha,
-        'logM0'    : args.logM0,
-        'lptsigma' : args.sigma
-    }
-    return params
+    return cparams, params
 
 def setupflowprofile(config,params):
 
@@ -113,6 +60,8 @@ def setupflowprofile(config,params):
         flowparams['beta']  = params['beta']
         flowparams['d0']    = params['d0']
         flowparams['gamma'] = params['gamma']
+        flowparams['inner'] = params['inner']
+        flowparams['outer'] = params['outer']
         params['xL'][i], flowfunc = funcs.flowgen(flowparams)
         fa[i,:] = flowfunc(qa)
     params['na'] = na
@@ -166,7 +115,7 @@ def getloss(config,xfl,yfl,zfl):
     # convert k from pixel units [0:npixel] to wavenumbers h/Mpc
     k = k * 2*np.pi / dy
 
-    loss = (1.-r_dh**2) / k 
+    loss = (1.-r_dh)**2 / k 
     if config.ploss: 
         loss *= abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg / 1e3
     else:
@@ -212,7 +161,9 @@ def getcfield(config, params, i, cfields, mask):
         deltac = 1.56 + 0.63 * deltasigma # "matter" =~ r^2dr
     elif config.filter == "energy":
         deltac = 1.78 + 0.81 * deltasigma # "energy" =~ r^4dr
-    deltac *= (config.cmass[i] / 10.**params['logM0'])**params['alpha']
+    deltac_scale = (config.cmass[i] / 10.**params['logM0'])**params['alpha']
+    deltac *= deltac_scale
+    # print(f"\n{deltac_scale} {deltac} {np.log10(config.cmass[i])} {params['logM0']} {params['alpha']}\n")
 
     cfield  = jnp.array(heaviright(deltasmooth,cen=deltac,scale=1e-5*deltac),dtype=config.cftype)
 
@@ -393,11 +344,13 @@ def flowloss(config,params):
     return loss, [rhopfl,mask]
 
 def initialize():
+    import config as ptc
 
-    args   = parsecommandline()
+    allparams = parsecommandline()
 
-    config = configfromargs(args)
-    params = paramsfromargs(args)
+    cparams, params = parseallparams(allparams)
+
+    config = ptc.PTflowConfig(**cparams)
 
     params = setupflowprofile(config,params)
 

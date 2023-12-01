@@ -16,9 +16,12 @@ def rhonfw(x,params):
     #
 
     c = 15
+    inner = -1.0
+    outer = -3.0
     if params is not None:
         c = params['cnfw']
-    rho = 1 / (x*(1+c*x)**2)
+    rho = (x**inner)*(1+c*x)**(outer-inner)
+    #rho = 1 / (x*(1+c*x)**2)
 
     return rho
 
