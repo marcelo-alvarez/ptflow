@@ -13,10 +13,6 @@ def optfromsample(config,inparams):
     lossfile  = datadir + 'loss.npz'
     params = copy.deepcopy(inparams)
 
-    # fiducial model from command line / default
-    loss, [rhopfl, mask] = ptf.flowloss(config,params)
-    pfa.analyze(config,params,rhopfl,mask)
-
     print()
     if config.sampl:
 
@@ -65,9 +61,11 @@ def optfromsample(config,inparams):
             config.verbose = False
 
             if any(param in sparams for param in ("d0","beta","gamma")):
-                config, params = ptf.setupflowprofile(config,params)
-            closs, aux = ptf.flowloss(config,params)
-
+                params = ptf.setupflowprofile(config,params)
+            closs, [rhopfl, mask] = ptf.flowloss(config,params)
+            if i==1:
+                # analyze fiducial model (i=1) from command line / default
+                pfa.analyze(config,params,rhopfl,mask)
             sampledparamsl.append(vparams[i,:])
             lossl.append(closs)
     
@@ -102,7 +100,7 @@ def optfromsample(config,inparams):
         print()
         config.verbose = True
         if any(param in sparams for param in ("d0","beta","gamma")):
-            config, params = ptf.setupflowprofile(config,params)
+            params = ptf.setupflowprofile(config,params)
         loss, [rhopfl,mask] = ptf.flowloss(config,params)
         pfa.analyze(config,params,rhopfl,mask,opt=True)
         print()

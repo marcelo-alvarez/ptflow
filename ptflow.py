@@ -38,6 +38,7 @@ def parsecommandline():
     parser.add_argument('--ctdwn', default=pfd.ctdwn, help=f'cfield order [{pfd.ctdwn}]', action=parsbool)
     parser.add_argument('--ftdwn', default=pfd.ftdwn, help=f'  flow order [{pfd.ftdwn}]', action=parsbool)
     parser.add_argument('--flowl', default=pfd.flowl, help=f'  inflow LPT [{pfd.flowl}]', action=parsbool)
+    parser.add_argument('--ploss', default=pfd.ploss, help=f'  pspec loss [{pfd.ploss}]', action=parsbool)
 
     # fiducial parameters
     parser.add_argument('--d0',    default=pfd.d0,    help=f'    deltavir [{pfd.d0}]   ', type=float)
@@ -75,7 +76,8 @@ def configfromargs(args):
         flowl = args.flowl,
         sampl = args.sampl,
         sqrtN = args.sqrtN,
-        sprms = args.sprms
+        sprms = args.sprms,
+        ploss = args.ploss
 
     )
 
@@ -97,8 +99,7 @@ def setupflowprofile(config,params):
     import funcs
 
     # flow profiles using duffy nfw 
-    config.xL       = np.zeros(config.nm,dtype=jnp.float32)
-    config.flowfunc = [None] * config.nm
+    params['xL'] = np.zeros(config.nm,dtype=jnp.float32)
     flowparams = {}
     na = 10000
     qa = np.logspace(-3,1,na)
@@ -112,13 +113,13 @@ def setupflowprofile(config,params):
         flowparams['beta']  = params['beta']
         flowparams['d0']    = params['d0']
         flowparams['gamma'] = params['gamma']
-        config.xL[i], config.flowfunc[i] = funcs.flowgen(flowparams)
-        fa[i,:] = config.flowfunc[i](qa)
+        params['xL'][i], flowfunc = funcs.flowgen(flowparams)
+        fa[i,:] = flowfunc(qa)
     params['na'] = na
     params['qa'] = jnp.asarray(qa)
     params['fa'] = jnp.asarray(fa)
-    config.xL    = jnp.asarray(config.xL)
-    return config, params
+    params['xL'] = jnp.asarray(params['xL'])
+    return params
 
 def getloss(config,xfl,yfl,zfl):
 
@@ -165,11 +166,14 @@ def getloss(config,xfl,yfl,zfl):
     # convert k from pixel units [0:npixel] to wavenumbers h/Mpc
     k = k * 2*np.pi / dy
 
-    ploss = abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg * (1.-r_dh**2) / k 
-    ploss *= heavileft(k,cen=kmax,soft=config.soft)
+    loss = (1.-r_dh**2) / k 
+    if config.ploss: 
+        loss *= abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg / 1e3
+    else:
+        loss *= 1e2
+    loss *= heavileft(k,cen=kmax,soft=config.soft)
 
-    loss = ploss.cumsum()[-1] / 1e3
-
+    loss = loss.cumsum()[-1]
     return loss, rhopfl
 
 def collkernele(x,soft=True):
@@ -229,7 +233,7 @@ getcfield = jax.jit(getcfield,static_argnums=[0,])
 def particleflow(config,params,i,cfield,xf,yf,zf):
 
     RLagpix = config.fRLag[i] / config.dsub
-    r0pix   = config.fRLag[i] / config.dsub / config.xL[i]
+    r0pix   = config.fRLag[i] / config.dsub / params['xL'][i] # config.xL[i]
     Rsmooth = config.fRLag[i] * params['lptsigma']
 
     # count number of convergence points within RLagpix pixels of each point and set flowing --> 1 when count > 1/2
@@ -277,12 +281,12 @@ def particleflow(config,params,i,cfield,xf,yf,zf):
     xf = xc * flowing + xf * (1-flowing) ; del xc ; gc.collect()
 
     dy = flow * (config.convolve(ys*cfield, RLagpix, norm=False) / count - y0)
-    yh = y0 + dy                         ; del dy ; gc.collect()
-    yf = yh * flowing + yf * (1-flowing) ; del yh ; gc.collect()
+    yc = y0 + dy                         ; del dy ; gc.collect()
+    yf = yc * flowing + yf * (1-flowing) ; del yc ; gc.collect()
 
     dz = flow * (config.convolve(zs*cfield, RLagpix, norm=False) / count - z0)
-    zh = z0 + dz                         ; del dz ; gc.collect()
-    zf = zh * flowing + zf * (1-flowing) ; del zh ; gc.collect()
+    zc = z0 + dz
+    zf = zc * flowing + zf * (1-flowing) ; del zc ; gc.collect()
  
     return xf,yf,zf
 particleflow = jax.jit(particleflow,static_argnums=[0,])
@@ -327,7 +331,7 @@ def flowstep(config,params,i,cfields,xf,yf,zf):
     if config.verbose:
         print(f" dynamics: {i+1:>4}/{config.nm:<4} nh={nc:<8} logM={np.log10(config.fmass[i]):<5.2f} "+
               f"dt={time()-t0:<6.3f} RLag={config.fRLag[i]:<6.3f}",end='\r')
-    return xf, yf, zf
+    return xf,yf,zf
 
 def cfieldall(config,params,cfields,mask):
 
@@ -395,6 +399,6 @@ def initialize():
     config = configfromargs(args)
     params = paramsfromargs(args)
 
-    config, params = setupflowprofile(config,params)
+    params = setupflowprofile(config,params)
 
     return config, params

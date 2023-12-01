@@ -11,7 +11,7 @@ kmax0 = 6
 fltr  = "matter"
 ctype = "int8"
 mtype = "int8"
-excl  = True
+excl  = False
 mask  = True
 soft  = False
 test  = False
@@ -20,6 +20,7 @@ sqrtN = 5
 ctdwn = True
 ftdwn = False
 flowl = True
+ploss = True
 
 # model parameters
 d0    =  200 
@@ -34,9 +35,9 @@ sprms = "d0,gamma,sigma"
 
 # sampling bounds
 samplbnds = {}
-samplbnds['d0']       = {'lower':    50, 'upper':  500, 'fid': d0,    'logscale' :  True}
-samplbnds['gamma']    = {'lower':  1.05, 'upper':    5, 'fid': gamma, 'logscale' :  True}
-samplbnds['beta']     = {'lower':  -2.9, 'upper':-0.05, 'fid': beta,  'logscale' : False}
-samplbnds['alpha']    = {'lower':  -0.5, 'upper': 0.05, 'fid': alpha, 'logscale' : False}
-samplbnds['logM0']    = {'lower':    11, 'upper':   15, 'fid': logM0, 'logscale' : False}
-samplbnds['lptsigma'] = {'lower':   0.3, 'upper':  2.0, 'fid': sigma, 'logscale' : False}
+samplbnds['d0']       = {'lower':    50, 'upper':  500, 'logscale' :  True}
+samplbnds['gamma']    = {'lower':  1.01, 'upper':  1.3, 'logscale' :  True}
+samplbnds['beta']     = {'lower':  -2.9, 'upper':-0.05, 'logscale' : False}
+samplbnds['alpha']    = {'lower':  -0.1, 'upper':  0.1, 'logscale' : False}
+samplbnds['logM0']    = {'lower':    11, 'upper':   15, 'logscale' : False}
+samplbnds['lptsigma'] = {'lower':   0.3, 'upper':  2.0, 'logscale' : False}

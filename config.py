@@ -43,7 +43,7 @@ class PTflowConfig:
         self.flowlpt   = kwargs.get('flowl', True)
         self.sampl     = kwargs.get('sampl', True)
         self.sqrtN     = kwargs.get('sqrtN', 5)
-
+        self.ploss     = kwargs.get('ploss', False)
         report = kwargs.get('report', False)
 
         sprms = kwargs.get('sprms','d0,gamma,sigma')
@@ -226,14 +226,16 @@ class PTflowConfig:
 
         return [x,y,z]
 
-    def binpoints(self,xp,yp,zp):
+    def binpoints(self,xp,yp,zp,wp=None):
         xp = xp.flatten()
         yp = yp.flatten()
         zp = zp.flatten()
+        if wp is not None:
+            wp = wp.flatten()
 
         bins  = self.sboxdims
         range = self.sbox
-        field = jnp.histogramdd(jnp.array([xp,yp,zp]).transpose(),bins=bins,range=range)[0]
+        field = jnp.histogramdd(jnp.array([xp,yp,zp]).transpose(),bins=bins,range=range,weights=wp)[0]
   
         return jnp.array(field)
     binpoints = jax.jit(binpoints,static_argnums=0)
