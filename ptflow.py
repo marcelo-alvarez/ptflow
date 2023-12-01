@@ -29,6 +29,7 @@ def parsecommandline():
     parser.add_argument('--fltr',  default=pfd.fltr,  help=f'      filter [{pfd.fltr}] ', type=str)
     parser.add_argument('--ctype', default=pfd.ctype, help=f' cfield type [{pfd.ctype}]', type=str)
     parser.add_argument('--mtype', default=pfd.mtype, help=f'   mask type [{pfd.mtype}]', type=str)
+    parser.add_argument('--sprms', default=pfd.sprms, help=f'sample plist [{pfd.sprms}]', type=str)
     parser.add_argument('--mask',  default=pfd.mask,  help=f'  do masking [{pfd.mask}] ', action=parsbool)
     parser.add_argument('--excl',  default=pfd.excl,  help=f'do exclusion [{pfd.excl}] ', action=parsbool)
     parser.add_argument('--soft',  default=pfd.soft,  help=f'thresholding [{pfd.soft}] ', action=parsbool)
@@ -73,7 +74,9 @@ def configfromargs(args):
         ftdwn = args.ftdwn,
         flowl = args.flowl,
         sampl = args.sampl,
-        sqrtN = args.sqrtN
+        sqrtN = args.sqrtN,
+        sprms = args.sprms
+
     )
 
     return config

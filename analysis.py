@@ -126,7 +126,7 @@ def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
     axes[4].imshow(rhopfl,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
     axes[5].imshow(rhodmg,norm=LogNorm(vmin=minrd,vmax=maxrd),extent=extent,cmap=cmaprd)
 
-    paramtag = f'{config.N}_d{params["d0"]}_n{config.nm}_k{config.kmax}'
+    paramtag = f'{config.N}_k{config.kmax}'
     prefix   = 'comp_' + paramtag 
 
     if opt:

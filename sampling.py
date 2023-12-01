@@ -4,80 +4,105 @@ import ptflow   as ptf
 import analysis as pfa
 import pathlib
 import os.path
+import copy
 
-def optfromsample(config,params):
+def optfromsample(config,inparams):
 
     datadir = "./data/"
     pathlib.Path(datadir).mkdir(parents=True, exist_ok=True)     
     lossfile  = datadir + 'loss.npz'
+    params = copy.deepcopy(inparams)
+
+    # fiducial model from command line / default
+    loss, [rhopfl, mask] = ptf.flowloss(config,params)
+    pfa.analyze(config,params,rhopfl,mask)
 
     print()
     if config.sampl:
 
         from scipy.stats import qmc
 
-        sampler = qmc.LatinHypercube(d=3, strength=2)
-        vparams = sampler.random(n=config.sqrtN**2)
+        sparams = config.samplprms
+        nvar = len(sparams)
 
-        #             alpha  log[M0] log[lptsigma]
-        l_bounds = [  -0.5,     12,        -0.2]
-        u_bounds = [   0.5,     14,         0.2]
+        l_bounds = []
+        u_bounds = []
+        fids = []
+        for sparam in sparams:
+    
+            smplbnds = config.samplbnds[sparam]
+    
+            l_bound = np.log10(smplbnds['lower']) if smplbnds['logscale'] else smplbnds['lower']
+            u_bound = np.log10(smplbnds['upper']) if smplbnds['logscale'] else smplbnds['upper']
+            fid     = np.log10(params[sparam])    if smplbnds['logscale'] else params[sparam]
+
+            l_bounds.append(l_bound)
+            u_bounds.append(u_bound)
+            fids.append(fid)
+
+        sampler = qmc.LatinHypercube(d=nvar, strength=2)
+        vparams = sampler.random(n=config.sqrtN**2)
         vparams = qmc.scale(vparams, l_bounds, u_bounds)
 
         # insert central point by hand
         vparams = np.asarray(vparams)
-        vparams = np.insert(vparams,[0],[[0.0,13.0,0.0]],axis=0)
-
-        sampledparamsl = []
+        vparams = np.insert(vparams,[0],[fids],axis=0)
         nval=np.shape(vparams)[0]
-        print("sampling parameter space")
 
         for i in range(nval):
-            alpha    =      vparams[i,0]
-            M0       = 10.**vparams[i,1]
-            lptsigma = 10.**vparams[i,2]
+            for j in range(nvar):
+                sparam = sparams[j]
+                smplbnds = config.samplbnds[sparam]
+                if smplbnds['logscale']: vparams[i,j] = 10**vparams[i,j]
 
-            params['alpha']    = alpha
-            params['M0']       = M0
-            params['lptsigma'] = lptsigma
-
+        sampledparamsl = []
+        print("sampling parameter space")
+        lossl = []
+        for i in range(nval):
+            for j in range(nvar):
+                sparam = sparams[j]
+                params[sparam] = vparams[i,j]
             config.verbose = False
-            closs, aux = ptf.flowloss(config,params)
-            sampledparamsl.append([alpha,M0,lptsigma,closs])
 
+            if any(param in sparams for param in ("d0","beta","gamma")):
+                config, params = ptf.setupflowprofile(config,params)
+            closs, aux = ptf.flowloss(config,params)
+
+            sampledparamsl.append(vparams[i,:])
+            lossl.append(closs)
+    
             sampledparams = np.asarray(sampledparamsl)
-            loss        = sampledparams[:,3]
+            loss = np.asarray(lossl)
+
             dm          = loss.argsort()
             loss        = loss[dm]
+            for j in range(nvar):
+                sampledparams[:,j] = sampledparams[:,j][dm]
 
-            alpha    = sampledparams[:,0][dm]
-            M0       = sampledparams[:,1][dm]
-            lptsigma = sampledparams[:,2][dm]
-            loss     = sampledparams[:,3][dm]
-
-            np.savez(lossfile,
-                    alpha    = alpha,
-                    M0       = M0,
-                    lptsigma = lptsigma,
-                    loss     = loss
-                    )
+            np.savez(lossfile,loss=loss,sampledparams=sampledparams)
             i+=1
-            print(f" {i:>3}/{nval:<3} curloss: {closs:>11.3f} alpha: {params['alpha']:>5.2f} logM0: {np.log10(params['M0']):>5.2f} lptsigma: {params['lptsigma']:>4.2f} minloss: {loss[0]:>11.3f}")
+            print(f" {i:>3}/{nval:<3} curloss: {closs:<7.3f} minloss: {loss[0]:<7.3f} ",end="")
+            for j in range(nvar):
+                sparam = sparams[j]
+                print(f"{sparams[j]}: {params[sparams[j]]:<7.3f} ",end="")
+            print()
         print()
 
     if os.path.isfile(lossfile):
         data = np.load(lossfile)
 
-        alpha    = data['alpha']
-        M0       = data['M0']
-        lptsigma = data['lptsigma']
+        loss          = data['loss']
+        sampledparams = data['sampledparams']
 
-        params['alpha']    = alpha[0]
-        params['M0']       = M0[0]
-        params['lptsigma'] = lptsigma[0]
-
-        print(f"running for optimal sampled parameters alpha: {alpha[0]:>5.2f} logM0: {np.log10(M0[0]):>5.2f} lptsigma: {lptsigma[0]:>4.2f}")
+        print(f"running for optimal sampled parameters with loss: {loss[0]:<7.3f} ",end="")
+        for j in range(nvar):
+            sparam = sparams[j]
+            params[sparam] = sampledparams[0,j]
+            print(f"{sparams[j]}: {params[sparam]:<7.3f} ",end="")
+        print()
+        config.verbose = True
+        if any(param in sparams for param in ("d0","beta","gamma")):
+            config, params = ptf.setupflowprofile(config,params)
         loss, [rhopfl,mask] = ptf.flowloss(config,params)
-
         pfa.analyze(config,params,rhopfl,mask,opt=True)
         print()

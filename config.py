@@ -7,6 +7,7 @@ import os.path
 from mutil import convolve
 import os
 import gc
+import defaults as pfd
 
 class PTflowConfig:
     '''PTflowConfig'''
@@ -44,6 +45,8 @@ class PTflowConfig:
         self.sqrtN     = kwargs.get('sqrtN', 5)
 
         report = kwargs.get('report', False)
+
+        sprms = kwargs.get('sprms','d0,gamma,sigma')
 
         if N % 2 == 0:
             i0=N//2-nx//2-1
@@ -125,6 +128,12 @@ class PTflowConfig:
 
         # binned LPT density
         self.rholpt = self.binpoints(self.xl,self.yl,self.zl)
+
+        # sample bounds set to default (user interface TBD)
+        self.samplbnds = pfd.samplbnds
+        self.samplprms = [s.strip() for s in sprms.split(",")]
+        for i in range(len(self.samplprms)):
+            if self.samplprms[i] == 'sigma': self.samplprms[i] = 'lptsigma'
 
         if report:
             # print set up information
