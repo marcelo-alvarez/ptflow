@@ -17,6 +17,9 @@ def reportsparams(config,params,sparamnames,loss,i,nval):
 
 def optfromsample(config,inparams):
 
+    import defaults as pfd
+
+    pparamnames = pfd.allparams['pparams'].keys()
     datadir = "./data/"
     pathlib.Path(datadir).mkdir(parents=True, exist_ok=True)     
     lossfile  = datadir + 'loss.npz'
@@ -51,7 +54,11 @@ def optfromsample(config,inparams):
     else:
         vparams = np.zeros((0,nvar))
 
-    # insert central point by hand
+    # sort samples by first variable value
+    dm = vparams[:,0].argsort()
+    vparams = vparams[dm,:]
+
+    # insert fiducial point by hand
     vparams = np.asarray(vparams)
     vparams = np.insert(vparams,[0],[fids],axis=0)
     nval=np.shape(vparams)[0]
@@ -72,7 +79,9 @@ def optfromsample(config,inparams):
             params[sparam] = vparams[i,j]
         if i>0: config.verbose = False 
 
-        if any(param in sparamnames for param in ("d0","beta","gamma")):
+        #if any(param in sparamnames for param in pparamnames):
+        modparams = set(list(sparamnames)).intersection(pparamnames)
+        if len(modparams) > 0:
             params = ptf.setupflowprofile(config,params)
         closs, [rhopfl, mask] = ptf.flowloss(config,params)
 
@@ -112,7 +121,10 @@ def optfromsample(config,inparams):
         reportsparams(config,params,sparamnames,closs,1,1)
         print()
 
-        if any(param in sparamnames for param in ("d0","beta","gamma")): params = ptf.setupflowprofile(config,params)
+        modparams = set(list(sparamnames)).intersection(pparamnames)
+        if len(modparams) > 0:
+            params = ptf.setupflowprofile(config,params)
+
         config.verbose = True
         loss, [rhopfl,mask] = ptf.flowloss(config,params)
         pfa.analyze(config,params,rhopfl,mask,opt=True)

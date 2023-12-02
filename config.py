@@ -14,41 +14,41 @@ class PTflowConfig:
     def __init__(self, **kwargs):
         # data location
         self.initdir = kwargs.get('datadirICs', os.environ["PTFLOW_COMPARISON_DATA"]+'/ICs/')
-        self.griddir = kwargs.get('griddir',     os.environ["PTFLOW_COMPARISON_DATA"]+'/griddata/')
-        self.partdir = kwargs.get('griddir',     os.environ["PTFLOW_COMPARISON_DATA"]+'/particledata/')
+        self.griddir = kwargs.get('griddir',    os.environ["PTFLOW_COMPARISON_DATA"]+'/griddata/')
+        self.partdir = kwargs.get('partdir',    os.environ["PTFLOW_COMPARISON_DATA"]+'/particledata/')
 
-        # simulation information     
-        boxsize = kwargs.get('boxsize',205.0) # ICs box size in Mpc/h
-        N       = kwargs.get('N',      625)   # ICs dimension
-        N0      = kwargs.get('N0',     625)   # ICs dimension (for scaling to other N)
-        x2yz    = kwargs.get('x2yz',   1.0)   # ny/nx = nz/nx
+        # simulation information
+        boxsize = kwargs.get('box',  pfd.cparams['box'])  # ICs box size in Mpc/h
+        N       = kwargs.get('N',    pfd.cparams['N'])    # ICs dimension
+        N0      = kwargs.get('N0',   pfd.cparams['N0'])   # ICs dimension (for scaling to other N)
+        x2yz    = kwargs.get('x2yz', pfd.cparams['x2yz']) # ny/nx = nz/nx
 
-        nx0 = kwargs.get('nx0', N0 // 5) # sbox 1st grid dimension scaled to N0
+        nx0 = kwargs.get('nx0', pfd.cparams['nx0']) # sbox 1st grid dimension scaled to N0
         nx  = nx0 * N // N0 # sbox 1st grid dimension
         ny  = nx * x2yz     # sbox 2nd grid dimension
         nz  = nx * x2yz     # sbox 3rd grid dimension
 
-        self.nm        = kwargs.get(   'nm', 20)
-        self.logM1     = kwargs.get('logM1', 10.0)
-        self.logM2     = kwargs.get('logM2', 15.0)
-        self.zoom      = kwargs.get( 'zoom', 0.7)
-        self.kmax      = kwargs.get('kmax0', 6.0) * N / N0
-        self.filter    = kwargs.get( 'fltr', "matter")
-        self.cftype    = kwargs.get('ctype', "int8")
-        self.masktype  = kwargs.get('mtype', "int8")
-        self.exclusion = kwargs.get( 'excl', False)
-        self.masking   = kwargs.get( 'mask', True)
-        self.soft      = kwargs.get( 'soft', False)
-        self.ctdwn     = kwargs.get('ctdwn', True)
-        self.ftdwn     = kwargs.get('ftdwn', False)
-        self.flowlpt   = kwargs.get('flowl', True)
-        self.sampl     = kwargs.get('sampl', True)
-        self.sqrtN     = kwargs.get('sqrtN', 5)
-        self.ploss     = kwargs.get('ploss', False)
+        self.nm        = kwargs.get(   'nm', pfd.cparams['nm'])
+        self.logM1     = kwargs.get('logM1', pfd.cparams['logM1'])
+        self.logM2     = kwargs.get('logM2', pfd.cparams['logM2'])
+        self.zoom      = kwargs.get( 'zoom', pfd.cparams['zoom'])
+        self.kmax      = kwargs.get('kmax0', pfd.cparams['kmax0']) * N / N0
+        self.filter    = kwargs.get( 'fltr', pfd.cparams['fltr'])
+        self.cftype    = kwargs.get('ctype', pfd.cparams['ctype'])
+        self.masktype  = kwargs.get('mtype', pfd.cparams['mtype'])
+        self.exclusion = kwargs.get( 'excl', pfd.cparams['excl'])
+        self.masking   = kwargs.get( 'mask', pfd.cparams['mask'])
+        self.soft      = kwargs.get( 'soft', pfd.cparams['soft'])
+        self.ctdwn     = kwargs.get('ctdwn', pfd.cparams['ctdwn'])
+        self.ftdwn     = kwargs.get('ftdwn', pfd.cparams['ftdwn'])
+        self.flowlpt   = kwargs.get('flowl', pfd.cparams['flowl'])
+        self.sampl     = kwargs.get('sampl', pfd.cparams['sampl'])
+        self.sqrtN     = kwargs.get('sqrtN', pfd.cparams['sqrtN'])
+        self.ploss     = kwargs.get('ploss', pfd.cparams['ploss'])
 
-        report = kwargs.get('report', True)
+        report = kwargs.get('reprt', pfd.cparams['reprt'])
 
-        sprms = kwargs.get('sprms','d0,gamma,lptsigma')
+        sprms = kwargs.get('sprms',pfd.cparams['sprms'])
 
         if N % 2 == 0:
             i0=N//2-nx//2-1
@@ -119,11 +119,31 @@ class PTflowConfig:
         self.verbose = True
 
         # ordered mass scales for covergence finding and particle flow
+        f = 0.2
+        nmlin = self.nm #// 2 
+        nmlog = self.nm + 1 #- nmlin + 1
+        logM12 = self.logM1 + f * (self.logM2-self.logM1)
+        mlin = jnp.sort(jnp.linspace(10.**self.logM1,10.**logM12,nmlin))
+        mlog = jnp.sort(jnp.logspace(         logM12, self.logM2,nmlog))
+        mass = jnp.concatenate((mlin,mlog[1:]))
         mass = jnp.sort(jnp.logspace(self.logM1,self.logM2,self.nm))
+        R1 = dsub
+        R2 = (3e15/jnp.pi/4/self.rho)**(1./3.)
+        R = jnp.linspace(R1,R2,int(R2/R1))
+        Rfine = (3*mass/4/jnp.pi/self.rho)**(1./3.)
+        rp = Rfine[0]
+        R = [rp]
+        for r in Rfine:
+            if r - rp >= dsub:
+                R.append(r)
+                rp = r
+        R = jnp.asarray(R)
+        #mass = 4*jnp.pi/3*self.rho*R**3
         self.cmass = jnp.flip(mass) if self.ctdwn else mass
         self.fmass = jnp.flip(mass) if self.ftdwn else mass
         self.cRLag   = (3*self.cmass/4./jnp.pi/self.rho)**(1./3.) * self.h
         self.fRLag   = (3*self.fmass/4./jnp.pi/self.rho)**(1./3.) * self.h
+        self.nm = len(mass)
 
         # unsmoothed LPT positions
         self.xl,self.yl,self.zl = self.advect(self.getslpt())
@@ -134,6 +154,20 @@ class PTflowConfig:
         # sample bounds set to default (user interface TBD)
         self.samplbnds = pfd.samplbnds
         self.samplprms = [s.strip() for s in sprms.split(",")]
+
+        # boundary padding
+        self.nbx = jnp.zeros((self.nm,2),dtype=jnp.int32)
+        self.nby = jnp.zeros((self.nm,2),dtype=jnp.int32)
+        self.nbz = jnp.zeros((self.nm,2),dtype=jnp.int32)
+        for i in range(self.nm):
+            ntophat = (self.fRLag[i]/self.dsub).astype(int)+1
+            self.nbx = self.nbx.at[i,0].set(min(ntophat,self.sboxdims[0]//2-1))
+            self.nby = self.nby.at[i,0].set(min(ntophat,self.sboxdims[1]//2-1))
+            self.nbz = self.nbz.at[i,0].set(min(ntophat,self.sboxdims[2]//2-1))
+            self.nbx = self.nbx.at[i,1].set(max(self.sboxdims[0]-ntophat,self.nbx[i,0]))
+            self.nby = self.nby.at[i,1].set(max(self.sboxdims[1]-ntophat,self.nby[i,0]))
+            self.nbz = self.nbz.at[i,1].set(max(self.sboxdims[2]-ntophat,self.nbz[i,0]))
+        self.xyz = jnp.asarray(jnp.meshgrid(jnp.arange(self.sboxdims[0]),jnp.arange(self.sboxdims[1]),jnp.arange(self.sboxdims[2]),indexing='ij'),dtype=jnp.int32)
 
         if report:
             # print set up information

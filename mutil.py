@@ -2,6 +2,47 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+# convolution
+def convolve(signal,win,wfunc=None,norm=True,winarr=False):
+    def _kernel(scale,sigshape,wfunc=None,norm=True):
+        nxr = sigshape[0]//2 ; nyr = sigshape[1]//2 ; nzr = sigshape[2]//2
+        ax = jnp.arange(2*nxr) - nxr
+        ay = jnp.arange(2*nyr) - nyr
+        az = jnp.arange(2*nzr) - nzr
+        x,y,z  = jnp.meshgrid(ax,ay,az,indexing='ij')
+        r      = jnp.sqrt(x**2+y**2+z**2)
+        kernel = r * 0.0
+        if wfunc is not None:
+            kernel = wfunc(r/scale)
+        else:
+            kernel = jnp.heaviside(scale-r,1.0)
+        if norm:
+            kernel /= kernel.sum()
+        return jnp.roll(kernel,(-nxr,-nyr,-nzr),axis=(0,1,2))
+    if not winarr:
+        win = _kernel(win,jnp.shape(signal),wfunc=wfunc,norm=norm)
+    return jnp.real(jnp.fft.irfftn(jnp.fft.rfftn(signal)*jnp.fft.rfftn(win),signal.shape))
+convolve  = jax.jit(convolve,static_argnames=["wfunc","norm","winarr"])
+
+# 1d filtering
+def tophat(x,cen=0,scale=1e-5,width=1.0,soft=True):
+    if soft:
+        cenl = cen - width/2
+        cenr = cen + width/2
+        return jax.nn.sigmoid((x-cenl)/scale)*jax.nn.sigmoid((cenr-x)/scale)*4.0
+    return jnp.heaviside(x-cen,1)*jnp.heaviside(cen-x,1)
+tophat = jax.jit(tophat,static_argnames=['soft',])
+
+def heaviright(x,cen=0,scale=1e-5,soft=True):
+    if soft: return jax.nn.sigmoid((x-cen)/scale)
+    return jnp.heaviside(x-cen,1)
+heaviright = jax.jit(heaviright,static_argnames=['soft',])
+
+def heavileft(x,cen=0,scale=1e-5,soft=True):
+    if soft: return jax.nn.sigmoid((cen-x)/scale)
+    return jnp.heaviside(cen-x,1)
+heavileft = jax.jit(heavileft,static_argnames=['soft',])
+
 def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return_nr=False ):
     """
     Calculate the azimuthally averaged radial profile.
@@ -67,25 +108,6 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
         else:
             return radial_prof
 
-# 1d filtering
-def tophat(x,cen=0,scale=1e-5,width=1.0,soft=True):
-    if soft:
-        cenl = cen - width/2
-        cenr = cen + width/2
-        return jax.nn.sigmoid((x-cenl)/scale)*jax.nn.sigmoid((cenr-x)/scale)*4.0
-    return jnp.heaviside(x-cen,1)*jnp.heaviside(cen-x,1)
-tophat = jax.jit(tophat,static_argnames=['soft',])
-
-def heaviright(x,cen=0,scale=1e-5,soft=True):
-    if soft: return jax.nn.sigmoid((x-cen)/scale)
-    return jnp.heaviside(x-cen,1)
-heaviright = jax.jit(heaviright,static_argnames=['soft',])
-
-def heavileft(x,cen=0,scale=1e-5,soft=True):
-    if soft: return jax.nn.sigmoid((cen-x)/scale)
-    return jnp.heaviside(cen-x,1)
-heavileft = jax.jit(heavileft,static_argnames=['soft',])
-
 # power spectrum
 def powerspectrum(f):
 
@@ -124,26 +146,3 @@ def crosspower2(f1,f2):
     ps = jnp.real(ff1 * jnp.conjugate(ff2))
 
     return ps
-
-# convolution
-def convolve(signal,win,wfunc=None,norm=True,winarr=False):
-    def _kernel(scale,sigshape,wfunc=None,norm=True):
-        nxr = sigshape[0]//2 ; nyr = sigshape[1]//2 ; nzr = sigshape[2]//2
-        ax = jnp.arange(2*nxr) - nxr
-        ay = jnp.arange(2*nyr) - nyr
-        az = jnp.arange(2*nzr) - nzr
-        x,y,z  = jnp.meshgrid(ax,ay,az,indexing='ij')
-        r      = jnp.sqrt(x**2+y**2+z**2)
-        kernel = r * 0.0
-        if wfunc is not None:
-            kernel = wfunc(r/scale)
-        else:
-            kernel = jnp.heaviside(scale-r,1.0)
-        if norm:
-            kernel /= kernel.sum()
-        return jnp.roll(kernel,(-nxr,-nyr,-nzr),axis=(0,1,2))
-    if not winarr:
-        win = _kernel(win,jnp.shape(signal),wfunc=wfunc,norm=norm)
-    return jnp.real(jnp.fft.irfftn(jnp.fft.rfftn(signal)*jnp.fft.rfftn(win),signal.shape))
-convolve  = jax.jit(convolve,static_argnames=["wfunc","norm","winarr"])
-

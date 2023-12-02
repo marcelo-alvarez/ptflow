@@ -115,7 +115,7 @@ def getloss(config,xfl,yfl,zfl):
     # convert k from pixel units [0:npixel] to wavenumbers h/Mpc
     k = k * 2*np.pi / dy
 
-    loss = (1.-r_dh)**2 / k 
+    loss = (1.-r_dh)**2 / k**1.5*20
     if config.ploss: 
         loss *= abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg / 1e3
     else:
@@ -150,20 +150,22 @@ def getcfield(config, params, i, cfields, mask):
     Rpix = config.cRLag[i] / config.dsub
 
     if config.filter == "matter":
-        collkernel = collkernelm
+        collkernel = collkernelm # "matter" =~ int delta(r)r^2dr
     else:
-        collkernel = collkernele
+        collkernel = collkernele # "energy" =~ int delta(r)r^4dr
     deltasmooth = config.convolve(config.deltai, Rpix, wfunc=collkernel)
     deltasigma  = jnp.sqrt(deltasmooth.var())
 
-     # halo-collapse-inspired thresholds using fits from Musso & Sheth 2021
+    # deltac_scale = 1 + (jnp.log10(config.cmass[i]) - params['logM0']) * params['alpha'] 
+    # deltasigma *= deltac_scale
+    delc0 = params['delc0']
+    delca = params['delca']
     if config.filter == "matter":
-        deltac = 1.56 + 0.63 * deltasigma # "matter" =~ r^2dr
+        # halo-collapse-inspired thresholds using fits from Musso & Sheth 2021
+        #deltac =  1.56 +  0.63 * deltasigma # "matter" Musso & Sheth 2021
+        deltac = delc0 + delca * deltasigma 
     elif config.filter == "energy":
-        deltac = 1.78 + 0.81 * deltasigma # "energy" =~ r^4dr
-    deltac_scale = (config.cmass[i] / 10.**params['logM0'])**params['alpha']
-    deltac *= deltac_scale
-    # print(f"\n{deltac_scale} {deltac} {np.log10(config.cmass[i])} {params['logM0']} {params['alpha']}\n")
+        deltac = 1.78 + 0.81 * deltasigma # "energy" Musso & Sheth 2021
 
     cfield  = jnp.array(heaviright(deltasmooth,cen=deltac,scale=1e-5*deltac),dtype=config.cftype)
 
@@ -178,14 +180,18 @@ def getcfield(config, params, i, cfields, mask):
 
     cfields += jnp.array((tophat(cfield,cen=1,soft=config.soft)*(i+1)),dtype=config.cftype)
 
-    return cfields, mask
-getcfield = jax.jit(getcfield,static_argnums=[0,])
+    return cfields, mask, deltasigma.item()
+#getcfield = jax.jit(getcfield,static_argnums=[0,])
 
-def particleflow(config,params,i,cfield,xf,yf,zf):
+def particleflow(config,params,i,cfield,sigmas,xf,yf,zf):
 
     RLagpix = config.fRLag[i] / config.dsub
     r0pix   = config.fRLag[i] / config.dsub / params['xL'][i] # config.xL[i]
-    Rsmooth = config.fRLag[i] * params['lptsigma']
+    smooth1 = params['smooth1']
+    smooth2 = params['smooth2']
+    fsigma = (sigmas[i]-sigmas[0]) / (sigmas[-1]-sigmas[0])
+    smooth = smooth1 * (1-fsigma) + smooth2 * fsigma
+    Rsmooth = config.fRLag[i] * smooth
 
     # count number of convergence points within RLagpix pixels of each point and set flowing --> 1 when count > 1/2
     count  = config.convolve(cfield, RLagpix, norm=False) 
@@ -242,62 +248,70 @@ def particleflow(config,params,i,cfield,xf,yf,zf):
     return xf,yf,zf
 particleflow = jax.jit(particleflow,static_argnums=[0,])
 
-def scaleflow(config,params,i,cfield,xf,yf,zf):
+def scaleflow(config,params,i,cfield,sigmas,xf,yf,zf):
 
     # remove cfield within specified distance of boundary to avoid wrapping artefacts
     # TBD do this in jax-friendly way inside of jitted particleflow function
-    ntophat = int(params['lptsigma']*config.fRLag[i]/config.dsub)+1
-    nbx = min(ntophat,config.sboxdims[0]//2-1)
-    nby = min(ntophat,config.sboxdims[1]//2-1)
-    nbz = min(ntophat,config.sboxdims[2]//2-1)
-    cfield = cfield.at[:nbx ,:,:].set(0)
-    cfield = cfield.at[-nbx:,:,:].set(0)
-    cfield = cfield.at[:,:nby ,:].set(0)
-    cfield = cfield.at[:,-nby:,:].set(0)
-    cfield = cfield.at[:,:,: nbz].set(0)
-    cfield = cfield.at[:,:,-nbz:].set(0)
+    nbx0 = config.nbx[i,0]
+    nby0 = config.nby[i,0]
+    nbz0 = config.nbz[i,0]
+    nbx1 = config.nbx[i,1]
+    nby1 = config.nby[i,1]
+    nbz1 = config.nbz[i,1]
+    x = config.xyz[0] ; y = config.xyz[1] ; z = config.xyz[2]
+    cfield *= jnp.heaviside(x-nbx0,1)*jnp.heaviside(y-nby0,1)*jnp.heaviside(z-nbz0,1)
+    cfield *= jnp.heaviside(nbx1-x,1)*jnp.heaviside(nby1-y,1)*jnp.heaviside(nbz1-z,1)
 
-    xf,yf,zf = particleflow(config,params,i,cfield,xf,yf,zf)
+    # cfield = cfield.at[:nbx0 ,:,:].set(0)
+    # cfield = cfield.at[-nbx0:,:,:].set(0)
+    # cfield = cfield.at[:,:nby0 ,:].set(0)
+    # cfield = cfield.at[:,-nby0:,:].set(0)
+    # cfield = cfield.at[:,:,: nbz0].set(0)
+    # cfield = cfield.at[:,:,-nbz0:].set(0)
+
+    xf,yf,zf = particleflow(config,params,i,cfield,sigmas,xf,yf,zf)
 
     return xf,yf,zf
+scaleflow = jax.jit(scaleflow,static_argnums=[0,])
 
 def cfieldstep(config,params,i,cfields,mask):
     t0 = time()
-    cfields, mask = getcfield(config,params,i,cfields,mask)
+    cfields, mask, sigma = getcfield(config,params,i,cfields,mask)
     cfield = tophat(cfields,cen=i+1,width=(i+1)/2,soft=config.soft)
     nc = int(cfield.sum())
     if config.verbose:
         print(f"threshold: {i+1:>4}/{config.nm:<4} nc={nc:<8} logM={np.log10(config.cmass[i]):<5.2f} "+
               f"dt={time()-t0:<6.3f} RLag={config.cRLag[i]:<6.3f}",end='\r')
-    return cfields, mask
+    return cfields, mask, sigma
 
-def flowstep(config,params,i,cfields,xf,yf,zf):
+def flowstep(config,params,i,cfields,sigmas,xf,yf,zf):
     t0 = time()
     ci = i+1 if config.ctdwn == config.ftdwn else config.nm-i
     cfield = tophat(cfields,cen=ci,width=ci/2,soft=config.soft)
     nc = int(cfield.sum())
     if int(cfield.sum())==0: return xf,yf,zf
 
-    xf,yf,zf = scaleflow(config,params,i,cfield,xf,yf,zf)
+    xf,yf,zf = scaleflow(config,params,i,cfield,sigmas,xf,yf,zf)
     if config.verbose:
         print(f" dynamics: {i+1:>4}/{config.nm:<4} nh={nc:<8} logM={np.log10(config.fmass[i]):<5.2f} "+
               f"dt={time()-t0:<6.3f} RLag={config.fRLag[i]:<6.3f}",end='\r')
     return xf,yf,zf
 
-def cfieldall(config,params,cfields,mask):
+def cfieldall(config,params,cfields,mask,sigmas):
 
     # iterate over cfield scales
     for i in range(config.nm):
-        cfields, mask = cfieldstep(config,params,i,cfields,mask)
+        cfields, mask, sigma = cfieldstep(config,params,i,cfields,mask)
+        sigmas.append(sigma)
     if config.verbose: print()
 
-    return cfields, mask
+    return cfields, mask, sigmas
 
-def flowall(config,params,cfields,xf,yf,zf):
+def flowall(config,params,cfields,sigmas,xf,yf,zf):
 
     # iterate over flow scales
     for i in range(config.nm):
-        xf,yf,zf = flowstep(config,params,i,cfields,xf,yf,zf)
+        xf,yf,zf = flowstep(config,params,i,cfields,sigmas,xf,yf,zf)
     if config.verbose: print()
 
     return xf,yf,zf
@@ -317,7 +331,7 @@ def fullflow(config,params):
     #   mask = 0 --> already a convergence point from previous iterations
     mask    = jnp.array(jnp.ones( config.sboxdims),dtype=config.masktype)    
     cfields = jnp.array(jnp.zeros(config.sboxdims),dtype=config.cftype)
-
+    sigmas  = []
     # [xf,yf,zf] = nonlinear positions initially set to unsmoothed LPT positions
     xf = config.xl.copy()
     yf = config.yl.copy()
@@ -328,12 +342,14 @@ def fullflow(config,params):
 
     # if ordering between cfield and flow is different, run cfield and flow separately
     if config.ctdwn != config.ftdwn:
-        cfields,mask = cfieldall(config,params,cfields,mask)
-        xf,yf,zf = flowall(config,params,cfields,xf,yf,zf)
+        cfields,mask,sigmas = cfieldall(config,params,cfields,mask,sigmas)
+        sigmas = jnp.asarray(sigmas)
+        xf,yf,zf = flowall(config,params,cfields,sigmas,xf,yf,zf)
     else:
         xf,yf,zf,mask = cfieldflowall(config,params,cfields,mask,xf,yf,zf)
 
     return xf,yf,zf,mask
+#fullflow = jax.jit(fullflow,static_argnums=[0,])
 
 def flowloss(config,params):
 

@@ -98,7 +98,7 @@ def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
     axes[1].plot(k, cl_hfl,c='r',ls='-',lw=3,label="hfl")
     axes[1].plot(k, cl_lpt,c='r',ls=':',lw=3,label="lpt")
 
-    ploss = abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg * (1.-r_dh**2) / k 
+    ploss = abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg * (1.-r_dh**2) / k**1.5 * 20
     ploss *= heavileft(k,cen=kmax,soft=config.soft)
 
     axes[1].plot(k,ploss.cumsum()/1e6)
