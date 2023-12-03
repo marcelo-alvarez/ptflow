@@ -337,7 +337,6 @@ particleflow = jax.jit(particleflow,static_argnums=[0,])
 def scaleflow(config,params,i,cfield,sigmas,xf,yf,zf):
 
     # remove cfield within specified distance of boundary to avoid wrapping artefacts
-    # TBD do this in jax-friendly way inside of jitted particleflow function
     nbx0 = params['nbx'][i,0]
     nby0 = params['nby'][i,0]
     nbz0 = params['nbz'][i,0]
@@ -347,13 +346,6 @@ def scaleflow(config,params,i,cfield,sigmas,xf,yf,zf):
     x = config.xyz[0] ; y = config.xyz[1] ; z = config.xyz[2]
     cfield *= jnp.heaviside(x-nbx0,1)*jnp.heaviside(y-nby0,1)*jnp.heaviside(z-nbz0,1)
     cfield *= jnp.heaviside(nbx1-x,1)*jnp.heaviside(nby1-y,1)*jnp.heaviside(nbz1-z,1)
-
-    # cfield = cfield.at[:nbx0 ,:,:].set(0)
-    # cfield = cfield.at[-nbx0:,:,:].set(0)
-    # cfield = cfield.at[:,:nby0 ,:].set(0)
-    # cfield = cfield.at[:,-nby0:,:].set(0)
-    # cfield = cfield.at[:,:,: nbz0].set(0)
-    # cfield = cfield.at[:,:,-nbz0:].set(0)
 
     xf,yf,zf = particleflow(config,params,i,cfield,sigmas,xf,yf,zf)
 
