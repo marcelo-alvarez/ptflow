@@ -5,8 +5,9 @@ import jax.numpy as jnp
 from time import time
 from jax import vmap
 import gc
+from jax.scipy.special import erfc
 
-from mutil import crosspower, powerspectrum, tophat, heavileft, heaviright
+from mutil import crosspower, powerspectrum, tophat, heavileft, heaviright, sortedinterp
 
 def parsecommandline():
     import argparse
@@ -41,33 +42,117 @@ def parseallparams(allparams):
 
     return cparams, params
 
+def getRfuncs(config, params):
+
+    MofR = lambda r: 4/3*jnp.pi*config.rho*(r/config.h)**3         # M in Msun; R in Mpc/h
+    RofM = lambda M: (3*M/4/jnp.pi/config.rho)**(1./3.) * config.h # M in Msun; R in Mpc/h
+
+    delta = config.loadfield('deltai',scalegrowth=True).copy()
+    R1 = RofM(10**config.logM1/2)
+    R2 = RofM(10**config.logM2*2)
+    nR   = 200
+    Ri   = jnp.linspace(R1,R2,nR)
+    sigmaR = [] #np.zeros(nR,dtype=jnp.float32)
+    R = []
+    sp = 0
+    r0 = 1e-3
+    for i in range(nR):
+        s = jnp.sqrt(config.convolve(delta,Ri[i]).var())
+        if i == 0 or abs(2*(sp-s)/(sp+s)) > r0:
+            R.append(Ri[i])
+            sigmaR.append(s)
+        sp = s
+    R = jnp.asarray(R)
+    sigmaR = jnp.asarray(sigmaR)
+
+    deltac = deltacofsigma(params,sigmaR)
+
+    sigma = jnp.asarray(sigmaR,dtype=jnp.float32)
+    nu    = deltac / sigmaR
+    lF    = jnp.log10(erfc(nu/jnp.sqrt(2)))
+    lR    = jnp.log10(R)
+
+    lFoflR = lambda lr: sortedinterp(lr,lR,lF)
+    lRoflF = lambda lf: sortedinterp(lf,lF,lR)
+
+    return lFoflR, MofR, lRoflF, RofM
+
+def setscales(config, params):
+
+    # ordered mass scales for covergence finding and particle flow
+
+    lFoflR, MofR, lRoflF, RofM = getRfuncs(config, params)
+
+    lM1 = config.logM1
+    lM2 = config.logM2
+
+    lR1 = jnp.log10(RofM(10.**lM1))
+    lR2 = jnp.log10(RofM(10.**lM2))
+
+    lF1 = lFoflR(lR1)
+    lF2 = lFoflR(lR2)
+
+    if config.scspacing == "logM":
+        mass = jnp.sort(jnp.logspace(lM1,lM2,config.nsc))
+        params['cmass'] = jnp.flip(mass) if config.ctdwn else mass
+        params['fmass'] = jnp.flip(mass) if config.ftdwn else mass
+
+        params['cRLag']  = RofM(params['cmass'])
+        params['fRLag']  = RofM(params['fmass'])
+
+    if config.scspacing == "logF":
+        lF = jnp.linspace(lF1,lF2,config.nsc)
+        lR = jnp.sort(lRoflF(lF))
+        RLag  = 10.**(lR)
+        params['cRLag'] = jnp.flip(RLag) if config.ctdwn else RLag
+        params['fRLag'] = jnp.flip(RLag) if config.ftdwn else RLag
+
+        params['cmass'] = MofR(params['cRLag'])
+        params['fmass'] = MofR(params['fRLag'])
+
+    # sbox boundary padding to avoid artefacts
+    params['nbx'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
+    params['nby'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
+    params['nbz'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
+    for i in range(config.nsc):
+        ntophat = (params['fRLag'][i]/config.dsub).astype(int)+1
+        params['nbx'] = params['nbx'].at[i,0].set(min(ntophat,config.sboxdims[0]//2-1))
+        params['nby'] = params['nby'].at[i,0].set(min(ntophat,config.sboxdims[1]//2-1))
+        params['nbz'] = params['nbz'].at[i,0].set(min(ntophat,config.sboxdims[2]//2-1))
+        params['nbx'] = params['nbx'].at[i,1].set(max(config.sboxdims[0]-ntophat,params['nbx'][i,0]))
+        params['nby'] = params['nby'].at[i,1].set(max(config.sboxdims[1]-ntophat,params['nby'][i,0]))
+        params['nbz'] = params['nbz'].at[i,1].set(max(config.sboxdims[2]-ntophat,params['nbz'][i,0]))
+
+    return config, params
+
 def setupflowprofile(config,params):
 
     import funcs
 
     # flow profiles using duffy nfw 
-    params['xL'] = np.zeros(config.nm,dtype=jnp.float32)
+    params['xL'] = np.zeros(config.nsc,dtype=jnp.float32)
     flowparams = {}
     na = 10000
     qa = np.logspace(-3,1,na)
     qa = np.insert(qa,0,0.0)
-    fa = np.zeros((config.nm,len(qa)))
-    for i in range(config.nm):
+    fa = np.zeros((config.nsc,len(qa)))
+    for i in range(config.nsc):
         z = 0.0
-        M200m = config.fmass[i] * config.h # mass scale in Msun/h
-        M200c = M200m * np.sqrt(config.omegam)
+        M200m = params['fmass'][i] * config.h  # mass scale in Msun/h
+        M200c = M200m * np.sqrt(config.omegam) # TBD CORRECT M200 CONVERSION
         flowparams['cnfw']  = funcs.duffycnfw(M200c,z)
-        flowparams['beta']  = params['beta']
-        flowparams['d0']    = params['d0']
-        flowparams['gamma'] = params['gamma']
-        flowparams['inner'] = params['inner']
-        flowparams['outer'] = params['outer']
+        flowparams['beta']  = params['pe']
+        flowparams['d0']    = params['d0']*100
+        flowparams['gamma'] = params['fM']
+        flowparams['inner'] = params['pi']
+        flowparams['outer'] = params['po']
         params['xL'][i], flowfunc = funcs.flowgen(flowparams)
         fa[i,:] = flowfunc(qa)
     params['na'] = na
     params['qa'] = jnp.asarray(qa)
     params['fa'] = jnp.asarray(fa)
     params['xL'] = jnp.asarray(params['xL'])
+
     return params
 
 def getloss(config,xfl,yfl,zfl):
@@ -119,7 +204,7 @@ def getloss(config,xfl,yfl,zfl):
     if config.ploss: 
         loss *= abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg / 1e3
     else:
-        loss *= 1e2
+        loss /= 1e1
     loss *= heavileft(k,cen=kmax,soft=config.soft)
 
     loss = loss.cumsum()[-1]
@@ -145,27 +230,23 @@ def cexclusion(config,cfield,deltasmooth,R,deltac):
 
     return cfield
 
+def deltacofsigma(params,deltasigma):
+    dc0 = params['dc0']
+    dca = params['dca']
+    return dc0 + dca * deltasigma
+
 def getcfield(config, params, i, cfields, mask):
 
-    Rpix = config.cRLag[i] / config.dsub
+    Rpix = params['cRLag'][i] / config.dsub
 
+    # matter and energy filters as in Musso & Sheth 2021
     if config.filter == "matter":
         collkernel = collkernelm # "matter" =~ int delta(r)r^2dr
     else:
         collkernel = collkernele # "energy" =~ int delta(r)r^4dr
     deltasmooth = config.convolve(config.deltai, Rpix, wfunc=collkernel)
     deltasigma  = jnp.sqrt(deltasmooth.var())
-
-    # deltac_scale = 1 + (jnp.log10(config.cmass[i]) - params['logM0']) * params['alpha'] 
-    # deltasigma *= deltac_scale
-    delc0 = params['delc0']
-    delca = params['delca']
-    if config.filter == "matter":
-        # halo-collapse-inspired thresholds using fits from Musso & Sheth 2021
-        #deltac =  1.56 +  0.63 * deltasigma # "matter" Musso & Sheth 2021
-        deltac = delc0 + delca * deltasigma 
-    elif config.filter == "energy":
-        deltac = 1.78 + 0.81 * deltasigma # "energy" Musso & Sheth 2021
+    deltac = deltacofsigma(params, deltasigma)
 
     cfield  = jnp.array(heaviright(deltasmooth,cen=deltac,scale=1e-5*deltac),dtype=config.cftype)
 
@@ -180,18 +261,23 @@ def getcfield(config, params, i, cfields, mask):
 
     cfields += jnp.array((tophat(cfield,cen=1,soft=config.soft)*(i+1)),dtype=config.cftype)
 
-    return cfields, mask, deltasigma.item()
-#getcfield = jax.jit(getcfield,static_argnums=[0,])
+    lfcoll = jnp.log10(erfc(deltac/deltasigma/jnp.sqrt(2)))
+    return cfields, mask, lfcoll
+getcfield = jax.jit(getcfield,static_argnums=[0,])
+
+def smoothfac(params,sigmas,i):
+    sm1 = params['sm1']
+    sm2 = params['sm2']
+    fsigma = (sigmas[i]-sigmas[0]) / (sigmas[-1]-sigmas[0])
+    fsigma = fsigma**params['sma']
+    return sm1 * (1-fsigma) + sm2 * fsigma
 
 def particleflow(config,params,i,cfield,sigmas,xf,yf,zf):
 
-    RLagpix = config.fRLag[i] / config.dsub
-    r0pix   = config.fRLag[i] / config.dsub / params['xL'][i] # config.xL[i]
-    smooth1 = params['smooth1']
-    smooth2 = params['smooth2']
-    fsigma = (sigmas[i]-sigmas[0]) / (sigmas[-1]-sigmas[0])
-    smooth = smooth1 * (1-fsigma) + smooth2 * fsigma
-    Rsmooth = config.fRLag[i] * smooth
+    RLagpix = params['fRLag'][i] / config.dsub
+    r0pix   = params['fRLag'][i] / config.dsub / params['xL'][i] # config.xL[i]
+
+    Rsmooth = params['fRLag'][i] * smoothfac(params,sigmas,i)
 
     # count number of convergence points within RLagpix pixels of each point and set flowing --> 1 when count > 1/2
     count  = config.convolve(cfield, RLagpix, norm=False) 
@@ -216,7 +302,7 @@ def particleflow(config,params,i,cfield,sigmas,xf,yf,zf):
     # flow field infalling towards cfield with profile in flowfunc
     qa = params['qa']
     fa = params['fa'][i]
-    flowf = lambda q: jnp.interp(q,qa,fa)
+    flowf = lambda q: sortedinterp(q,qa,fa)
     flow = config.convolve(cfield, r0pix, flowf, norm = False) * flowing
     flow /= count
 
@@ -252,12 +338,12 @@ def scaleflow(config,params,i,cfield,sigmas,xf,yf,zf):
 
     # remove cfield within specified distance of boundary to avoid wrapping artefacts
     # TBD do this in jax-friendly way inside of jitted particleflow function
-    nbx0 = config.nbx[i,0]
-    nby0 = config.nby[i,0]
-    nbz0 = config.nbz[i,0]
-    nbx1 = config.nbx[i,1]
-    nby1 = config.nby[i,1]
-    nbz1 = config.nbz[i,1]
+    nbx0 = params['nbx'][i,0]
+    nby0 = params['nby'][i,0]
+    nbz0 = params['nbz'][i,0]
+    nbx1 = params['nbx'][i,1]
+    nby1 = params['nby'][i,1]
+    nbz1 = params['nbz'][i,1]
     x = config.xyz[0] ; y = config.xyz[1] ; z = config.xyz[2]
     cfield *= jnp.heaviside(x-nbx0,1)*jnp.heaviside(y-nby0,1)*jnp.heaviside(z-nbz0,1)
     cfield *= jnp.heaviside(nbx1-x,1)*jnp.heaviside(nby1-y,1)*jnp.heaviside(nbz1-z,1)
@@ -280,27 +366,27 @@ def cfieldstep(config,params,i,cfields,mask):
     cfield = tophat(cfields,cen=i+1,width=(i+1)/2,soft=config.soft)
     nc = int(cfield.sum())
     if config.verbose:
-        print(f"threshold: {i+1:>4}/{config.nm:<4} nc={nc:<8} logM={np.log10(config.cmass[i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={config.cRLag[i]:<6.3f}",end='\r')
+        print(f"  threshold: {i+1:>4}/{config.nsc:<4} nc={nc:<8} logM={np.log10(params['cmass'][i]):<5.2f} "+
+              f"dt={time()-t0:<6.3f} RLag={params['cRLag'][i]:<6.3f}",end='\r')
     return cfields, mask, sigma
 
 def flowstep(config,params,i,cfields,sigmas,xf,yf,zf):
     t0 = time()
-    ci = i+1 if config.ctdwn == config.ftdwn else config.nm-i
+    ci = i+1 if config.ctdwn == config.ftdwn else config.nsc-i
     cfield = tophat(cfields,cen=ci,width=ci/2,soft=config.soft)
     nc = int(cfield.sum())
     if int(cfield.sum())==0: return xf,yf,zf
 
     xf,yf,zf = scaleflow(config,params,i,cfield,sigmas,xf,yf,zf)
     if config.verbose:
-        print(f" dynamics: {i+1:>4}/{config.nm:<4} nh={nc:<8} logM={np.log10(config.fmass[i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={config.fRLag[i]:<6.3f}",end='\r')
+        print(f"   dynamics: {i+1:>4}/{config.nsc:<4} nh={nc:<8} logM={np.log10(params['fmass'][i]):<5.2f} "+
+              f"dt={time()-t0:<6.3f} RLag={params['fRLag'][i]:<6.3f}",end='\r')
     return xf,yf,zf
 
 def cfieldall(config,params,cfields,mask,sigmas):
 
     # iterate over cfield scales
-    for i in range(config.nm):
+    for i in range(config.nsc):
         cfields, mask, sigma = cfieldstep(config,params,i,cfields,mask)
         sigmas.append(sigma)
     if config.verbose: print()
@@ -310,7 +396,7 @@ def cfieldall(config,params,cfields,mask,sigmas):
 def flowall(config,params,cfields,sigmas,xf,yf,zf):
 
     # iterate over flow scales
-    for i in range(config.nm):
+    for i in range(config.nsc):
         xf,yf,zf = flowstep(config,params,i,cfields,sigmas,xf,yf,zf)
     if config.verbose: print()
 
@@ -318,7 +404,7 @@ def flowall(config,params,cfields,sigmas,xf,yf,zf):
 
 def cfieldflowall(config,params,cfields,mask,xf,yf,zf):
     # iterate over cfield scales
-    for i in range(config.nm):
+    for i in range(config.nsc):
         cfields,mask = cfieldstep(config,params,i,cfields,mask)
         xf,yf,zf = flowstep(config,params,i,cfields,xf,yf,zf)
     if config.verbose: print()
@@ -367,6 +453,8 @@ def initialize():
     cparams, params = parseallparams(allparams)
 
     config = ptc.PTflowConfig(**cparams)
+
+    config, params = setscales(config,params)
 
     params = setupflowprofile(config,params)
 

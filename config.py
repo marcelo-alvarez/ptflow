@@ -28,7 +28,7 @@ class PTflowConfig:
         ny  = nx * x2yz     # sbox 2nd grid dimension
         nz  = nx * x2yz     # sbox 3rd grid dimension
 
-        self.nm        = kwargs.get(   'nm', pfd.cparams['nm'])
+        self.nsc       = kwargs.get(  'nsc', pfd.cparams['nsc'])
         self.logM1     = kwargs.get('logM1', pfd.cparams['logM1'])
         self.logM2     = kwargs.get('logM2', pfd.cparams['logM2'])
         self.zoom      = kwargs.get( 'zoom', pfd.cparams['zoom'])
@@ -45,6 +45,7 @@ class PTflowConfig:
         self.sampl     = kwargs.get('sampl', pfd.cparams['sampl'])
         self.sqrtN     = kwargs.get('sqrtN', pfd.cparams['sqrtN'])
         self.ploss     = kwargs.get('ploss', pfd.cparams['ploss'])
+        self.scspacing = kwargs.get('scsp',  pfd.cparams['scsp'])
 
         report = kwargs.get('reprt', pfd.cparams['reprt'])
 
@@ -118,33 +119,6 @@ class PTflowConfig:
         # logging on by default
         self.verbose = True
 
-        # ordered mass scales for covergence finding and particle flow
-        f = 0.2
-        nmlin = self.nm #// 2 
-        nmlog = self.nm + 1 #- nmlin + 1
-        logM12 = self.logM1 + f * (self.logM2-self.logM1)
-        mlin = jnp.sort(jnp.linspace(10.**self.logM1,10.**logM12,nmlin))
-        mlog = jnp.sort(jnp.logspace(         logM12, self.logM2,nmlog))
-        mass = jnp.concatenate((mlin,mlog[1:]))
-        mass = jnp.sort(jnp.logspace(self.logM1,self.logM2,self.nm))
-        R1 = dsub
-        R2 = (3e15/jnp.pi/4/self.rho)**(1./3.)
-        R = jnp.linspace(R1,R2,int(R2/R1))
-        Rfine = (3*mass/4/jnp.pi/self.rho)**(1./3.)
-        rp = Rfine[0]
-        R = [rp]
-        for r in Rfine:
-            if r - rp >= dsub:
-                R.append(r)
-                rp = r
-        R = jnp.asarray(R)
-        #mass = 4*jnp.pi/3*self.rho*R**3
-        self.cmass = jnp.flip(mass) if self.ctdwn else mass
-        self.fmass = jnp.flip(mass) if self.ftdwn else mass
-        self.cRLag   = (3*self.cmass/4./jnp.pi/self.rho)**(1./3.) * self.h
-        self.fRLag   = (3*self.fmass/4./jnp.pi/self.rho)**(1./3.) * self.h
-        self.nm = len(mass)
-
         # unsmoothed LPT positions
         self.xl,self.yl,self.zl = self.advect(self.getslpt())
 
@@ -155,18 +129,7 @@ class PTflowConfig:
         self.samplbnds = pfd.samplbnds
         self.samplprms = [s.strip() for s in sprms.split(",")]
 
-        # boundary padding
-        self.nbx = jnp.zeros((self.nm,2),dtype=jnp.int32)
-        self.nby = jnp.zeros((self.nm,2),dtype=jnp.int32)
-        self.nbz = jnp.zeros((self.nm,2),dtype=jnp.int32)
-        for i in range(self.nm):
-            ntophat = (self.fRLag[i]/self.dsub).astype(int)+1
-            self.nbx = self.nbx.at[i,0].set(min(ntophat,self.sboxdims[0]//2-1))
-            self.nby = self.nby.at[i,0].set(min(ntophat,self.sboxdims[1]//2-1))
-            self.nbz = self.nbz.at[i,0].set(min(ntophat,self.sboxdims[2]//2-1))
-            self.nbx = self.nbx.at[i,1].set(max(self.sboxdims[0]-ntophat,self.nbx[i,0]))
-            self.nby = self.nby.at[i,1].set(max(self.sboxdims[1]-ntophat,self.nby[i,0]))
-            self.nbz = self.nbz.at[i,1].set(max(self.sboxdims[2]-ntophat,self.nbz[i,0]))
+        # sbox coordinate array for boundary padding
         self.xyz = jnp.asarray(jnp.meshgrid(jnp.arange(self.sboxdims[0]),jnp.arange(self.sboxdims[1]),jnp.arange(self.sboxdims[2]),indexing='ij'),dtype=jnp.int32)
 
         if report:
@@ -174,17 +137,17 @@ class PTflowConfig:
             print()
             print("PTFlow configuration")
             print()
-            print(" grid dimensions: ",f"{self.sboxdims[0]:5d} {self.sboxdims[1]:5d} {self.sboxdims[2]:5d}")
+            print("   dimensions: ",f"{self.sboxdims[0]:<4d} {self.sboxdims[1]:<4d} {self.sboxdims[2]:<4d}")
             print()
-            print(" grid resolution: ",f"{self.dsub:5.3f}")
+            print("   resolution: ",f"{self.dsub:<5.3f}")
             print()
-            print("    subbox range: ",f"{self.sbox[0][0]:5.1f} {self.sbox[0][1]:5.1f}")
-            print("                  ",f"{self.sbox[1][0]:5.1f} {self.sbox[1][1]:5.1f}")
-            print("                  ",f"{self.sbox[2][0]:5.1f} {self.sbox[2][1]:5.1f}")
+            print("       subbox: ",f"{self.sbox[0][0]:<5.1f} {self.sbox[0][1]:<5.1f}")
+            print("               ",f"{self.sbox[1][0]:<5.1f} {self.sbox[1][1]:<5.1f}")
+            print("               ",f"{self.sbox[2][0]:<5.1f} {self.sbox[2][1]:<5.1f}")
             print()
-            print("grid DM filename: ",f"{self.fields['rhodmg']['files']}")
-            print("    ICs filename: ",f"{self.fields['deltai']['files']}")
-            print("    sx1 filename: ",f"{self.fields['sx1']['files']}")
+            print("      DM file: ",f"{self.fields['rhodmg']['files']}")
+            print("     ICs file: ",f"{self.fields['deltai']['files']}")
+            print("     sx1 file: ",f"{self.fields['sx1']['files']}")
             print()
 
     def fieldsbox(self,arr):

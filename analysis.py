@@ -101,7 +101,7 @@ def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
     ploss = abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg * (1.-r_dh**2) / k**1.5 * 20
     ploss *= heavileft(k,cen=kmax,soft=config.soft)
 
-    axes[1].plot(k,ploss.cumsum()/1e6)
+    #axes[1].plot(k,ploss.cumsum()/1e6)
 
     axes[1].set_xscale('log')
     axes[1].set_yscale('log')
@@ -143,8 +143,8 @@ def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
     figfile  =  figdir + prefix + ".png"
     datafile = datadir + prefix
 
-    print(f"saving figure to file {figfile}")
+    print(f"\n  figure saved to {figfile}")
     plt.savefig(figfile,bbox_inches='tight',dpi=100)
 
-    print(f"saving data to file {datafile}.npz")
+    print(f"    data saved to {datafile}.npz\n")
     np.savez(datafile,rholpt=rholpt,mask=mask,rhopfl=rhopfl,rhodmg=config.rhodmg)

@@ -8,12 +8,12 @@ import copy
 from time import time
 
 def reportsparams(config,params,sparamnames,loss,i,nval):
-    print(f" {i:>3}/{nval:<3} loss: {loss:<7.3f} ",end="")
+    print(f" {i:>3}/{nval:<3} loss: {loss:<5.2f} ",end="")
     for sparam in sparamnames:
-        print(f"{sparam}: {params[sparam]:<7.3f} ",end="")
+        print(f"{sparam}: {params[sparam]:<5.2f} ",end="")
     for param in config.samplbnds:
         if param not in sparamnames:
-            print(f"{param}: {params[param]:<7.3f} ",end="")    
+            print(f"{param}: {params[param]:<5.2f} ",end="")    
 
 def optfromsample(config,inparams):
 
@@ -24,8 +24,6 @@ def optfromsample(config,inparams):
     pathlib.Path(datadir).mkdir(parents=True, exist_ok=True)     
     lossfile  = datadir + 'loss.npz'
     params = copy.deepcopy(inparams)
-
-    print()
 
     from scipy.stats import qmc
 
@@ -70,7 +68,10 @@ def optfromsample(config,inparams):
             if smplbnds['logscale']: vparams[i,j] = 10**vparams[i,j]
 
     sparamvalsl = []
-    print("sampling parameter space")
+    if config.sampl:
+        print("sampling parameter space")
+    else: 
+        print("running single model")
     lossl = []
     for i in range(nval):
         t0 = time()
@@ -103,15 +104,13 @@ def optfromsample(config,inparams):
 
         i+=1
         reportsparams(config,params,sparamnames,closs,i,nval)
-        print(f"minloss: {loss[0]:<7.3f} dt: {time()-t0:<6.2} ")
+        print(f"minloss: {loss[0]:<6.2f} dt: {time()-t0:<6.2} ")
     print()
 
-    if os.path.isfile(lossfile):
-        data = np.load(lossfile)
+    if config.sampl:
 
-        closs   = data['loss'][0]
-        sparamvals  = data['sparamvals'][0]
-        sparamnames = data['sparamnames']
+        closs      = loss[0]
+        sparamvals = sparamvals[0]
 
         nvar = len(sparamnames)
         for i in range(nvar):

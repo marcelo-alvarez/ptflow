@@ -2,6 +2,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+# sorted jnp.interp wrapper
+def sortedinterp(x,xp,yp):
+    dm = jnp.argsort(xp)
+    return jnp.interp(x,xp[dm],yp[dm])
+
 # convolution
 def convolve(signal,win,wfunc=None,norm=True,winarr=False):
     def _kernel(scale,sigshape,wfunc=None,norm=True):
