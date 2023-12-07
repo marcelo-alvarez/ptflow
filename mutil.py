@@ -2,6 +2,25 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+# 1d filtering
+def tophat(x,cen=0,scale=1e-5,width=1e-2,soft=True):
+    cenl = cen - width/2
+    cenr = cen + width/2
+    if soft:
+        return jax.nn.sigmoid((x-cenl)/scale)*jax.nn.sigmoid((cenr-x)/scale)#*4.0
+    return jnp.heaviside(x-cenl,1)*jnp.heaviside(cenr-x,1)
+tophat = jax.jit(tophat,static_argnames=['soft',])
+
+def heaviright(x,cen=0,scale=1e-5,soft=True):
+    if soft: return jax.nn.sigmoid((x-cen)/scale)
+    return jnp.heaviside(x-cen,1)
+heaviright = jax.jit(heaviright,static_argnames=['soft',])
+
+def heavileft(x,cen=0,scale=1e-5,soft=True):
+    if soft: return jax.nn.sigmoid((cen-x)/scale)
+    return jnp.heaviside(cen-x,1)
+heavileft = jax.jit(heavileft,static_argnames=['soft',])
+
 # sorted jnp.interp wrapper
 def sortedinterp(x,xp,yp):
     dm = jnp.argsort(xp)
@@ -16,11 +35,10 @@ def convolve(signal,win,wfunc=None,norm=True,winarr=False):
         az = jnp.arange(2*nzr) - nzr
         x,y,z  = jnp.meshgrid(ax,ay,az,indexing='ij')
         r      = jnp.sqrt(x**2+y**2+z**2)
-        kernel = r * 0.0
         if wfunc is not None:
             kernel = wfunc(r/scale)
         else:
-            kernel = jnp.heaviside(scale-r,1.0)
+            kernel = heaviright(scale-r,scale=0.1) # jnp.heaviside(scale-r,1.0)
         if norm:
             kernel /= kernel.sum()
         return jnp.roll(kernel,(-nxr,-nyr,-nzr),axis=(0,1,2))
@@ -28,25 +46,6 @@ def convolve(signal,win,wfunc=None,norm=True,winarr=False):
         win = _kernel(win,jnp.shape(signal),wfunc=wfunc,norm=norm)
     return jnp.real(jnp.fft.irfftn(jnp.fft.rfftn(signal)*jnp.fft.rfftn(win),signal.shape))
 convolve  = jax.jit(convolve,static_argnames=["wfunc","norm","winarr"])
-
-# 1d filtering
-def tophat(x,cen=0,scale=1e-5,width=1.0,soft=True):
-    if soft:
-        cenl = cen - width/2
-        cenr = cen + width/2
-        return jax.nn.sigmoid((x-cenl)/scale)*jax.nn.sigmoid((cenr-x)/scale)*4.0
-    return jnp.heaviside(x-cen,1)*jnp.heaviside(cen-x,1)
-tophat = jax.jit(tophat,static_argnames=['soft',])
-
-def heaviright(x,cen=0,scale=1e-5,soft=True):
-    if soft: return jax.nn.sigmoid((x-cen)/scale)
-    return jnp.heaviside(x-cen,1)
-heaviright = jax.jit(heaviright,static_argnames=['soft',])
-
-def heavileft(x,cen=0,scale=1e-5,soft=True):
-    if soft: return jax.nn.sigmoid((cen-x)/scale)
-    return jnp.heaviside(cen-x,1)
-heavileft = jax.jit(heavileft,static_argnames=['soft',])
 
 def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return_nr=False ):
     """

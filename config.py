@@ -8,6 +8,7 @@ from mutil import convolve
 import os
 import gc
 import defaults as pfd
+from jax.scipy.stats import gaussian_kde
 
 class PTflowConfig:
     '''PTflowConfig'''
@@ -43,9 +44,12 @@ class PTflowConfig:
         self.ftdwn     = kwargs.get('ftdwn', pfd.cparams['ftdwn'])
         self.flowlpt   = kwargs.get('flowl', pfd.cparams['flowl'])
         self.sampl     = kwargs.get('sampl', pfd.cparams['sampl'])
+        self.smplopt   = kwargs.get('sopt',  pfd.cparams['sopt'])
+        self.gradopt   = kwargs.get('gopt',  pfd.cparams['gopt'])
         self.sqrtN     = kwargs.get('sqrtN', pfd.cparams['sqrtN'])
-        self.ploss     = kwargs.get('ploss', pfd.cparams['ploss'])
-        self.scspacing = kwargs.get('scsp',  pfd.cparams['scsp'])
+        self.losstype  = kwargs.get('ltype', pfd.cparams['ltype'])
+        self.spacing   = kwargs.get('space', pfd.cparams['space'])
+        self.verbose   = kwargs.get('vbose', pfd.cparams['vbose'])
 
         report = kwargs.get('reprt', pfd.cparams['reprt'])
 
@@ -92,6 +96,9 @@ class PTflowConfig:
         self.fields = {}
         self.fields['deltai'] = {}
         self.fields['rhodmg'] = {}
+        self.fields['dmposx'] = {}
+        self.fields['dmposy'] = {}
+        self.fields['dmposz'] = {}
 
         # field filenames
         self.fields['deltai']['files'] = self.initdir+'delta'+'_'+str(N)
@@ -99,12 +106,18 @@ class PTflowConfig:
             self.fields[s] = {} 
             self.fields[s]['files'] = self.initdir+s+'_s2lpt'+'_'+str(N)
         self.fields['rhodmg']['files'] = self.griddir+'dm_nx-'+str(N)+'_ngrid-'+str(N)+'.bin'
+        self.fields['dmposx']['files'] = self.griddir+'dm_xpos_ngrid-'+str(N)+'.bin'
+        self.fields['dmposy']['files'] = self.griddir+'dm_ypos_ngrid-'+str(N)+'.bin'
+        self.fields['dmposz']['files'] = self.griddir+'dm_zpos_ngrid-'+str(N)+'.bin'
 
         # field data
         self.fields['deltai']['data'] = None
         for s in sfields:
             self.fields[s]['data'] = None
         self.fields['rhodmg']['data'] = None
+        self.fields['dmposx']['data'] = None
+        self.fields['dmposy']['data'] = None
+        self.fields['dmposz']['data'] = None
 
         # convolution
         self.convolve = convolve
@@ -115,15 +128,18 @@ class PTflowConfig:
         # load training data
         self.deltai = self.loadfield('deltai',scalegrowth=True ).copy()
         self.rhodmg = self.loadfield('rhodmg',scalegrowth=False).copy() 
-
-        # logging on by default
-        self.verbose = True
+        self.dmposx = self.loadfield('dmposx',scalegrowth=False).copy()
+        self.dmposy = self.loadfield('dmposy',scalegrowth=False).copy()
+        self.dmposz = self.loadfield('dmposz',scalegrowth=False).copy()
 
         # unsmoothed LPT positions
         self.xl,self.yl,self.zl = self.advect(self.getslpt())
 
         # binned LPT density
         self.rholpt = self.binpoints(self.xl,self.yl,self.zl)
+
+        # binned dmpos density
+        self.rhodmp = self.binpoints(self.dmposx,self.dmposy,self.dmposz)
 
         # sample bounds set to default (user interface TBD)
         self.samplbnds = pfd.samplbnds
@@ -224,6 +240,7 @@ class PTflowConfig:
         return [x,y,z]
 
     def binpoints(self,xp,yp,zp,wp=None):
+
         xp = xp.flatten()
         yp = yp.flatten()
         zp = zp.flatten()
@@ -233,9 +250,49 @@ class PTflowConfig:
         bins  = self.sboxdims
         range = self.sbox
         field = jnp.histogramdd(jnp.array([xp,yp,zp]).transpose(),bins=bins,range=range,weights=wp)[0]
-  
         return jnp.array(field)
+
     binpoints = jax.jit(binpoints,static_argnums=0)
+
+    def binpoints_kde(self,xp,yp,zp):
+
+        xp = xp.flatten()
+        yp = yp.flatten()
+        zp = zp.flatten()
+
+        gridx = jnp.linspace(self.sbox[0,0]+self.dsub/2,self.sbox[0,1]-self.dsub/2,self.sboxdims[0]).astype(jnp.float32)
+        gridy = jnp.linspace(self.sbox[1,0]+self.dsub/2,self.sbox[1,1]-self.dsub/2,self.sboxdims[1]).astype(jnp.float32)
+        gridz = jnp.linspace(self.sbox[2,0]+self.dsub/2,self.sbox[2,1]-self.dsub/2,self.sboxdims[2]).astype(jnp.float32)
+        q=jnp.meshgrid(gridx,gridy,gridz,indexing='ij')
+
+        x = jnp.vstack([xp,yp,zp])
+        field = jnp.zeros(self.sboxdims,dtype=jnp.float32)
+        kernel = gaussian_kde(x,bw_method=self.dsub)
+
+        isub = 4
+        nsi = self.sboxdims[0] // isub
+        nsj = self.sboxdims[1] // isub
+        nsk = self.sboxdims[2] // isub
+        for i in range(isub):
+            i0 = i * nsi
+            i1 = i0 + nsi
+            for j in range(isub):
+                j0 = j * nsj
+                j1 = j0 + nsj
+                for k in range(isub):
+                    k0 = k * nsk
+                    k1 = k0 + nsk
+                    qsx = q[0][i0:i1,j0:j1,k0:k1].flatten()
+                    qsy = q[1][i0:i1,j0:j1,k0:k1].flatten()
+                    qsz = q[2][i0:i1,j0:j1,k0:k1].flatten()
+
+                    qsub = jnp.vstack([qsx,qsy,qsz])
+                    fsub = kernel(qsub)
+                    jax.block_until_ready(fsub)
+                    field = field.at[i0:i1,j0:j1,k0:k1].set(jnp.reshape(fsub,(nsi,nsj,nsk)))
+
+        return field
+    binpoints_kde = jax.jit(binpoints_kde,static_argnums=0)
 
     def getICs(self):
         # read / cache initial particle data (not currently used)

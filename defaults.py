@@ -12,20 +12,23 @@ cparams = {
     'zoom'  : {'val' : 0.666,    'type' : float,  'desc' : '   train zoom'},
     'kmax0' : {'val' :  6,       'type' : float,  'desc' : '   train kmax'},
     'fltr'  : {'val' : "matter", 'type' : str,    'desc' : '       filter'},
-    'ctype' : {'val' : "int8",   'type' : str,    'desc' : '  cfield type'},
-    'mtype' : {'val' : "int8",   'type' : str,    'desc' : '    mask type'},
+    'ctype' : {'val' : "float32",'type' : str,    'desc' : '  cfield type'},
+    'mtype' : {'val' : "float32",'type' : str,    'desc' : '    mask type'},
     'sprms' : {'val' : "d0",     'type' : str,    'desc' : ' sample plist'},
-    'scsp'  : {'val' : "logF",   'type' : str,    'desc' : 'scale spacing'},
+    'space' : {'val' : "logF",   'type' : str,    'desc' : 'scale spacing'},
+    'ltype' : {'val' : "pos",    'type' : str,    'desc' : '    loss type'},
     'mask'  : {'val' : True,     'type' : 'bool', 'desc' : '   do masking'},
     'excl'  : {'val' : False,    'type' : 'bool', 'desc' : ' do exclusion'},
-    'soft'  : {'val' : False,    'type' : 'bool', 'desc' : ' thresholding'},
+    'soft'  : {'val' : True,     'type' : 'bool', 'desc' : ' thresholding'},
     'test'  : {'val' : False,    'type' : 'bool', 'desc' : '         test'},
-    'sampl' : {'val' : False,    'type' : 'bool', 'desc' : '       sample'},
+    'sampl' : {'val' : True,     'type' : 'bool', 'desc' : 'sample params'},
+    'sopt'  : {'val' : False,    'type' : 'bool', 'desc' : '   sample opt'},
+    'gopt'  : {'val' : False,    'type' : 'bool', 'desc' : '     grad opt'},
     'ctdwn' : {'val' : True,     'type' : 'bool', 'desc' : ' cfield order'},
     'ftdwn' : {'val' : False,    'type' : 'bool', 'desc' : '   flow order'},
     'flowl' : {'val' : True,     'type' : 'bool', 'desc' : '   inflow LPT'},
-    'ploss' : {'val' : True,     'type' : 'bool', 'desc' : '   pspec loss'},
-    'reprt' : {'val' : True,     'type' : 'bool', 'desc' : ' report config'}
+    'reprt' : {'val' : True,     'type' : 'bool', 'desc' : 'report config'},
+    'vbose' : {'val' : True,     'type' : 'bool', 'desc' : '      verbose'}
 }
 
 # default sampling  bounds
@@ -33,17 +36,17 @@ samplbnds = {}
 
 # profile parameters
 pparams = {
-    'pi' : {'val' : -1.5, 'type' : float, 'desc' : '  inner plaw'},
-    'po' : {'val' : -3.0, 'type' : float, 'desc' : '  outer plaw'},
-    'pe' : {'val' : -2.0, 'type' : float, 'desc' : '    ext plaw'},
+    'pi' : {'val' : -1.9, 'type' : float, 'desc' : '  inner plaw'},
+    'po' : {'val' : -2.7, 'type' : float, 'desc' : '  outer plaw'},
+    'pe' : {'val' : -1.0, 'type' : float, 'desc' : '    ext plaw'},
     'd0' : {'val' :  1.6, 'type' : float, 'desc' : 'deltavir/100'},
     'fM' : {'val' : 1.06, 'type' : float, 'desc' : '     M0 / Mh'}
 }
-samplbnds['pi'] = {'lower': -1.9, 'upper': -1.1, 'logscale' : False}
-samplbnds['po'] = {'lower': -2.7, 'upper': -3.3, 'logscale' : False}
-samplbnds['pe'] = {'lower': -1.0, 'upper': -2.0, 'logscale' : False}
+samplbnds['pi'] = {'lower': -1.3, 'upper': -1.1, 'logscale' : False}
+samplbnds['po'] = {'lower': -3.3, 'upper': -2.7, 'logscale' : False}
+samplbnds['pe'] = {'lower': -2.0, 'upper': -0.5, 'logscale' : False}
 samplbnds['d0'] = {'lower':  0.5, 'upper':    5, 'logscale' :  True}
-samplbnds['fM'] = {'lower': 1.01, 'upper': 1.11, 'logscale' :  True}
+samplbnds['fM'] = {'lower': 1.01, 'upper':  2.0, 'logscale' :  True}
 
 # cfield and flow parameters
 fparams = {
@@ -57,13 +60,13 @@ fparams = {
     'dca' : {'val' :  0.67, 'type' : float, 'desc' : 'd[deltac]/dsg'},
     'sm1' : {'val' :  0.71, 'type' : float, 'desc' : '      smooth1'},
     'sm2' : {'val' :  1.76, 'type' : float, 'desc' : '      smooth2'},
-    'sma' : {'val' :     2, 'type' : float, 'desc' : '      smootha'} 
+    'sma' : {'val' :  2.00, 'type' : float, 'desc' : '      smootha'}
 }
-samplbnds['dc0'] = {'lower': 0.9*1.62, 'upper': 1.1*1.62, 'logscale' : False}
-samplbnds['dca'] = {'lower': 0.9*0.67, 'upper': 1.1*0.67, 'logscale' : False}
-samplbnds['sm1'] = {'lower': 0.71-0.1, 'upper': 0.71+0.1, 'logscale' : False}
-samplbnds['sm2'] = {'lower': 1.76-0.1, 'upper': 1.76+0.1, 'logscale' : False}
-samplbnds['sma'] = {'lower':      0.1, 'upper':       10, 'logscale' :  True}
+samplbnds['dc0'] = {'lower':      1.0, 'upper':    5.0, 'logscale' : False}
+samplbnds['dca'] = {'lower':      0.0, 'upper':    1.0, 'logscale' : False}
+samplbnds['sm1'] = {'lower':      0.1, 'upper':    4, 'logscale' : False}
+samplbnds['sm2'] = {'lower':      0.1, 'upper':    4, 'logscale' : False}
+samplbnds['sma'] = {'lower':      0.2, 'upper':    5, 'logscale' :  True}
 
 # all parameters
 allparams = {
