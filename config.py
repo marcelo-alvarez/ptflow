@@ -50,10 +50,12 @@ class PTflowConfig:
         self.losstype  = kwargs.get('ltype', pfd.cparams['ltype'])
         self.spacing   = kwargs.get('space', pfd.cparams['space'])
         self.verbose   = kwargs.get('vbose', pfd.cparams['vbose'])
+        self.runname   = kwargs.get('rname', pfd.cparams['rname'])
 
         report = kwargs.get('reprt', pfd.cparams['reprt'])
 
         sprms = kwargs.get('sprms',pfd.cparams['sprms'])
+        gprms = kwargs.get('gprms',pfd.cparams['gprms'])
 
         if N % 2 == 0:
             i0=N//2-nx//2-1
@@ -119,9 +121,6 @@ class PTflowConfig:
         self.fields['dmposy']['data'] = None
         self.fields['dmposz']['data'] = None
 
-        # convolution
-        self.convolve = convolve
-
         # ics lpt order
         self.lpt = 2
 
@@ -132,6 +131,9 @@ class PTflowConfig:
         self.dmposy = self.loadfield('dmposy',scalegrowth=False).copy()
         self.dmposz = self.loadfield('dmposz',scalegrowth=False).copy()
 
+        self.dmposd = self.getparticlerho(self.dmposx,self.dmposy,self.dmposz)
+        self.dmposd /= self.dmposd.mean()
+
         # unsmoothed LPT positions
         self.xl,self.yl,self.zl = self.advect(self.getslpt())
 
@@ -141,9 +143,10 @@ class PTflowConfig:
         # binned dmpos density
         self.rhodmp = self.binpoints(self.dmposx,self.dmposy,self.dmposz)
 
-        # sample bounds set to default (user interface TBD)
-        self.samplbnds = pfd.samplbnds
-        self.samplprms = [s.strip() for s in sprms.split(",")]
+        # parameter bounds and optimization subsets
+        self.pbounds = pfd.pbounds
+        self.soptprms = [s.strip() for s in sprms.split(",")]
+        self.goptprms = [s.strip() for s in gprms.split(",")]
 
         # sbox coordinate array for boundary padding
         self.xyz = jnp.asarray(jnp.meshgrid(jnp.arange(self.sboxdims[0]),jnp.arange(self.sboxdims[1]),jnp.arange(self.sboxdims[2]),indexing='ij'),dtype=jnp.int32)
@@ -194,7 +197,7 @@ class PTflowConfig:
 
         return
     
-    def getslpt(self,Rsmooth=None,f=1.0):
+    def getslpt(self,Rsmooth=None,f=1.0,dir=None):
 
         self.loadlpt()
         sx1 = self.fields['sx1']['data']; sy1 = self.fields['sy1']['data']; sz1 = self.fields['sz1']['data']
@@ -203,17 +206,17 @@ class PTflowConfig:
 
         if Rsmooth is not None:
             sigmaL = Rsmooth / self.dsub
-            sx1 = self.convolve(sx1,sigmaL)
-            sy1 = self.convolve(sy1,sigmaL)
-            sz1 = self.convolve(sz1,sigmaL)
+            sx1 = convolve(sx1,sigmaL,dir=dir)
+            sy1 = convolve(sy1,sigmaL,dir=dir)
+            sz1 = convolve(sz1,sigmaL,dir=dir)
         sx = Df * sx1
         sy = Df * sy1
         sz = Df * sz1
         if sx2 is not None:
             if Rsmooth is not None:
-                sx2 = self.convolve(sx2,sigmaL)
-                sy2 = self.convolve(sy2,sigmaL)
-                sz2 = self.convolve(sz2,sigmaL)
+                sx2 = convolve(sx2,sigmaL,dir=dir)
+                sy2 = convolve(sy2,sigmaL,dir=dir)
+                sz2 = convolve(sz2,sigmaL,dir=dir)
             sx -= 3./7. * Df**2 * sx2
             sy -= 3./7. * Df**2 * sy2
             sz -= 3./7. * Df**2 * sz2 
@@ -253,6 +256,13 @@ class PTflowConfig:
         return jnp.array(field)
 
     binpoints = jax.jit(binpoints,static_argnums=0)
+
+    def getparticlerho(self,x,y,z):
+        i = ((x-self.sbox[0,0]) // self.dsub).astype(jnp.int32)
+        j = ((y-self.sbox[1,0]) // self.dsub).astype(jnp.int32)
+        k = ((z-self.sbox[2,0]) // self.dsub).astype(jnp.int32)
+        rho = self.binpoints(x,y,z)
+        return rho[i,j,k]
 
     def binpoints_kde(self,xp,yp,zp):
 

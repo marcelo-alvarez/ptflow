@@ -7,47 +7,115 @@ import os.path
 import copy
 from time import time
 
-def reportsparams(config,params,sparamnames,loss,i,nval):
+def reportsparams(config,params,sparamnames,loss,i,nval,grad=False):
     print(f" {i:>3}/{nval:<3} loss: {loss:<5.2f} ",end="")
     for sparam in sparamnames:
         print(f"{sparam}: {params[sparam]:<5.2f} ",end="")
-    for param in config.samplbnds:
+    for param in config.pbounds:
         if param not in sparamnames:
-            print(f"{param}: {params[param]:<5.2f} ",end="")    
+            pname=param
+            if grad: pname=f"dloss/d{param}"
+            print(f"{pname}: {params[param]:<5.2f} ",end="")
+
+def reportgrads(params,pnames,grads,loss,step,i):
+    print(f" {i:>3} loss: {loss:<.5e} ",end="")
+    for sparam in pnames:
+        print(f"{sparam}: {params[sparam]:<.5e} ",end="")
+    for sparam in pnames:
+        print(f"grad-{sparam}: { grads[sparam]:<.5e} ",end="")
+    print(f"step: {step}")
 
 def optfromgrad(config,params):
     config.verbose = False
 
     dloss = 1e10
-    lossp = 1e10
-    step = 1e-4
-    i=0
-    while abs(dloss) > 1e-5:
+    loss = 1e10
+    gamma = 1e-3
+    i = 0
+    losses=np.empty(0,dtype=np.float32)
+    grads=np.empty(0,dtype=np.float32)
+    gparams=np.empty(0,dtype=np.float32)
+    oldparams={}
+    oldgrad={}
+    minloss=1e10
+    gamma0 = gamma
+    maxfail = 5
+    ifail=0
+    while i<30 or ifail < maxfail:
         cparams,fparams,pparams,params = ptf.parseallparams(params)
-        print(f"iteration:  {i}")
-        print(f"  params:   {fparams}")
-        lossgrad,loss,rhopfl,mask = ptf.flowgrad(config,params,fparams)
-        dloss = lossp-loss
-        lossp = loss
-        print(f"  loss:     {loss}")
-        print(f"  lossgrad: {lossgrad}")
 
-        oldparams = copy.deepcopy(fparams)
-        for pname in fparams:
+        oldloss=loss
+        # loss and grad update
+        lossgrad,loss,rhopfl,xf,yf,zf,mask = ptf.flowgrad(config,params,fparams)
+        if i==0:
+            datastring = pfa.savedata(config,params,rhopfl,xf,yf,zf,mask)
+            pfa.analyze(datastring)
 
-            l_bound = config.samplbnds[pname]['lower']
-            u_bound = config.samplbnds[pname]['upper']
+        minloss = min(minloss,loss)
+        dloss = loss-oldloss
+
+        if loss == minloss:
+            optparams = copy.deepcopy(params)
+        if (dloss > 0 or loss > minloss) and i>0:
+            for pname in config.goptprms:
+                params[pname]  = oldparams[pname]
+                lossgrad[pname] = oldgrad[pname]
+            gamma /= 2
+            ifail += 1
+        else:
+            gamma *= 2
+            losses=np.append(losses,loss)
+            grads=np.append(grads,lossgrad[config.goptprms[0]])
+            gparams=np.append(gparams,params[config.goptprms[0]])
+
+        if loss > minloss and abs(dloss)/(loss-minloss) < 1e-3:
+            print(f"convergence too slow with dloss={dloss} and loss-minloss={loss-minloss}. stopping...")
+            break
+
+        minstep = 1e10
+        for pname in config.goptprms:
+            oldparams[pname]  = params[pname]
+            oldgrad[pname] = lossgrad[pname]
+            step = loss/lossgrad[pname]**2
+            if step < minstep:
+                minstep = step
+                diffparam = pname
+
+        updatelist = config.goptprms
+        #updatelist = [diffparam]
+
+        reportgrads(fparams,updatelist,lossgrad,loss,gamma,i)
+
+        for pname in updatelist:
+
+            l_bound = config.pbounds[pname]['lower']
+            u_bound = config.pbounds[pname]['upper']
 
             oldval = params[pname]
-            newval = oldval - step * loss / lossgrad[pname]
+            newval = oldval - gamma * minstep * lossgrad[pname]
 
             if l_bound - newval > 0:
-                newval = 0.5 * (oldval+l_bound)
+                newval = 0.5 * (l_bound+oldval)
+                #raise Exception(f"below lower bound for {pname}: {oldval} --> {newval} < {l_bound}")
             elif newval - u_bound > 0:
-                newval = 0.5 * (oldval+u_bound)
+                newval = 0.5 * (u_bound+oldval)
+                #raise Exception(f"above upper bound for {pname}: {oldval} --> {newval} > {u_bound}")
 
             params[pname] = newval
-    pfa.analyze(config,params,rhopfl,mask)
+        i+=1
+
+        if len(losses) > 0:
+            losses=np.array(losses)
+            gparams=np.array(gparams)
+            grads=np.array(grads)
+            np.savez("glosses.npz",losses=losses,gparams=gparams,grads=grads)
+
+    print(f"running and analyzing model with optimal parameters")
+    cparams,fparams,pparams,params = ptf.parseallparams(optparams)
+    lossgrad,loss,rhopfl,xf,yf,zf,mask = ptf.flowgrad(config,params,fparams)
+    datastring = pfa.savedata(config,optparams,rhopfl,xf,yf,zf,mask,opt=True)
+    reportgrads(fparams,config.goptprms,lossgrad,loss,gamma,0)
+    pfa.analyze(datastring)
 
     return
 
@@ -63,7 +131,7 @@ def sampleparams(config,inparams):
 
     from scipy.stats import qmc
 
-    sparamnames = config.samplprms
+    sparamnames = config.soptprms
     nvar = len(sparamnames)
 
     l_bounds = []
@@ -71,11 +139,14 @@ def sampleparams(config,inparams):
     fids = []
     for sparam in sparamnames:
 
-        smplbnds = config.samplbnds[sparam]
+        smplbounds = config.pbounds[sparam]
 
-        l_bound = np.log10(smplbnds['lower']) if smplbnds['logscale'] else smplbnds['lower']
-        u_bound = np.log10(smplbnds['upper']) if smplbnds['logscale'] else smplbnds['upper']
-        fid     = np.log10(params[sparam])    if smplbnds['logscale'] else params[sparam]
+        smplbounds['lower'] *= inparams[sparam]
+        smplbounds['upper'] *= inparams[sparam]
+
+        l_bound = np.log10(smplbounds['lower']) if smplbounds['logscale'] else smplbounds['lower']
+        u_bound = np.log10(smplbounds['upper']) if smplbounds['logscale'] else smplbounds['upper']
+        fid     = np.log10(params[sparam])    if smplbounds['logscale'] else params[sparam]
 
         l_bounds.append(l_bound)
         u_bounds.append(u_bound)
@@ -100,8 +171,8 @@ def sampleparams(config,inparams):
     for i in range(nval):
         for j in range(nvar):
             sparam = sparamnames[j]
-            smplbnds = config.samplbnds[sparam]
-            if smplbnds['logscale']: vparams[i,j] = 10**vparams[i,j]
+            smplbounds = config.pbounds[sparam]
+            if smplbounds['logscale']: vparams[i,j] = 10**vparams[i,j]
 
     sparamvalsl = []
     if config.smplopt:
@@ -120,10 +191,14 @@ def sampleparams(config,inparams):
         modparams = set(list(sparamnames)).intersection(pparamnames)
         if len(modparams) > 0:
             params = ptf.setupflowprofile(config,params)
-        closs,rhopfl,mask = ptf.fullflow(config,params)
+        closs,rhopfl,xf,yf,zf,mask = ptf.fullflow(config,params)
 
         # if first iteration then analyze fiducial model
-        if i==0: pfa.analyze(config,params,rhopfl,mask)
+        if i==0:
+            datastring = pfa.savedata(config,params,rhopfl,xf,yf,zf,mask)
+            pfa.analyze(datastring)
+
+
         sparamvalsl.append(vparams[i,:])
         lossl.append(closs)
 
@@ -132,6 +207,11 @@ def sampleparams(config,inparams):
 
         dm          = loss.argsort()
         loss        = loss[dm]
+
+        if closs == loss[0]:
+            datastring = pfa.savedata(config,params,rhopfl,xf,yf,zf,mask,opt=True)
+            pfa.analyze(datastring)
+
         for j in range(nvar):
             sparamvals[:,j] = sparamvals[:,j][dm]
 
@@ -161,6 +241,9 @@ def sampleparams(config,inparams):
             params = ptf.setupflowprofile(config,params)
 
         config.verbose = True
-        loss,rhopfl,mask = ptf.fullflow(config,params)
-        pfa.analyze(config,params,rhopfl,mask,opt=True)
+        loss,rhopfl,xf,yf,zf,mask = ptf.fullflow(config,params)
+
+        datastring = pfa.savedata(config,params,rhopfl,xf,yf,zf,mask,opt=True)
+        pfa.analyze(datastring)
+
         print()

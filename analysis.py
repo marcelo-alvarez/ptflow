@@ -1,25 +1,73 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pathlib
+import pickle
+import jax.numpy as jnp
+import ptflow as ptf
 
 from matplotlib import gridspec
 from matplotlib.colors import LogNorm
 from mutil import heavileft, crosspower, powerspectrum
 
-def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
+def savedata(config,params,rhopfl,xf,yf,zf,mask,opt=False):
+
+    paramtag = f'{config.N}_k{config.kmax}'
+    datastring   = 'comp_' + paramtag
+
+    if opt:
+        datastring += "_opt"
+    else:
+        datastring += "_fid"
+
+    datadir = "./data/"
+
+    pathlib.Path(datadir).mkdir(parents=True, exist_ok=True)
+
+    datapath = datadir + datastring
+
+    print(f"\n    data saved to {datapath}.npz")
+    np.savez(datapath,mask=mask,rhopfl=rhopfl,xf=xf,yf=yf,zf=zf)
+
+    config.params = params
+    print(f"  config saved to {datapath}.config")
+    pickle.dump(config, open(f"{datapath}.config", "wb"))
+
+    return datastring
+
+def analyze(datastring,zoom=None,zoomx=None,bindm=False):
+
+    # load cached data
+    config = pickle.load(open(f"./data/{datastring}.config", "rb"))
+    params = config.params
+
+    data = np.load(f"./data/{datastring}.npz")
+    rhopfl = data['rhopfl']
+    mask   = data['mask']
+    xf     = data['xf']
+    yf     = data['yf']
+    zf     = data['zf']
+
+    fmin = fmax = None
+
+    loss = ptf.particleloss(config,params,xf,yf,zf)
+    print(f"loss = {loss}")
 
     plt.rcParams['figure.figsize']    = [10, 5]
     plt.rcParams["contour.linewidth"] = 0.5
 
-    zoom = config.zoom
+    if zoom is None:
+        zoom = config.zoom
+    if zoomx is None:
+        zoomx = config.zoom
+
     kmax = config.kmax
 
-    ncol=3; nrow=2
+    ncol=3; nrow=3
     fig, axes = plt.subplots(nrow,ncol,figsize=(8,8),gridspec_kw={'wspace': -0.3, 'hspace': 0.1})
     axes = axes.ravel()
     fig.set_size_inches(18.5, 10.5, forward=True)
 
-    dx = (config.sbox[0][1]-config.sbox[0][0])*zoom
+    dx = (config.sbox[0][1]-config.sbox[0][0])*zoomx
     dy = (config.sbox[1][1]-config.sbox[1][0])*zoom
     dz = (config.sbox[2][1]-config.sbox[2][0])*zoom
 
@@ -27,7 +75,7 @@ def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
     yc = 0.5 * (config.sbox[1][0]+config.sbox[1][1])
     zc = 0.5 * (config.sbox[2][0]+config.sbox[2][1])
 
-    x0 = xc - dx / 2; x1 = xc + dy / 2
+    x0 = xc - dx / 2; x1 = xc + dx / 2
     y0 = yc - dy / 2; y1 = yc + dy / 2
     z0 = zc - dz / 2; z1 = zc + dz / 2
 
@@ -37,29 +85,109 @@ def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
     j0 = int(y0/config.dsub) - config.sboxrange[1][0] ; j1 = int(y1/config.dsub) - config.sboxrange[1][0]
     k0 = int(z0/config.dsub) - config.sboxrange[2][0] ; k1 = int(z1/config.dsub) - config.sboxrange[2][0]
 
+    i1 = max(i1,i0+1)
+    j1 = max(j1,j0+1)
+    k1 = max(k1,k0+1)
+
     si = slice(i0,i1)
     sj = slice(j0,j1)
     sk = slice(k0,k1)
 
     plt.rcParams["contour.linewidth"] = 0.5
 
+    if bindm:
+        rhodmg = config.binpoints(xd,yd,zd)
+        rhodmg = rhodmg[si,sj,sk].mean(axis=0)
+    else:
+        rhodmg = config.loadfield('rhodmg',scalegrowth=True )
+        rhodmg = rhodmg[si,sj,sk].mean(axis=0) * (config.N/2500)**3
+
     deltai = config.loadfield('deltai',scalegrowth=True )
-    rhodmg = config.loadfield('rhodmg',scalegrowth=True )
     rholpt = config.rholpt
+
+    xd = config.fields['dmposx']['data']
+    yd = config.fields['dmposy']['data']
+    zd = config.fields['dmposz']['data']
+
 
     deltai = deltai[si,sj,sk].mean(axis=0)
     mask   =   mask[si,sj,sk].mean(axis=0)
     rholpt = rholpt[si,sj,sk].mean(axis=0)
     rhopfl = rhopfl[si,sj,sk].mean(axis=0)
-    rhodmg = rhodmg[si,sj,sk].mean(axis=0) * (config.N/2500)**3
 
+    xl = config.xl
+    yl = config.yl
+    zl = config.zl
+
+    gridx = jnp.linspace(config.sbox[0,0]+config.dsub/2,config.sbox[0,1]-config.dsub/2,config.sboxdims[0]).astype(jnp.float32)
+    gridy = jnp.linspace(config.sbox[1,0]+config.dsub/2,config.sbox[1,1]-config.dsub/2,config.sboxdims[1]).astype(jnp.float32)
+    gridz = jnp.linspace(config.sbox[2,0]+config.dsub/2,config.sbox[2,1]-config.dsub/2,config.sboxdims[2]).astype(jnp.float32)
+    [gridx,gridy,gridz]=jnp.meshgrid(gridx,gridy,gridz,indexing='ij')
+
+    sxd = xd - gridx ; syd = yd - gridy ; szd = zd - gridz
+    sxf = xf - gridx ; syf = yf - gridy ; szf = zf - gridz
+    fd = False
+    if fd:
+        sxl = xl - gridx ; syl = yl - gridy ; szl = zl - gridz
+    else:
+        Rsmooth = 10.0
+        #sxl,dum,dum = config.getslpt(Rsmooth=Rsmooth,dir=dir)
+        #dum,szl,dum = config.getslpt()
+        #dir=None ; dum,syl,dum = config.getslpt(Rsmooth=Rsmooth,dir=dir)
+        #dir=None ; dum,dum,szl = config.getslpt(Rsmooth=Rsmooth,dir=dir)
+        #sxl,syl,szl = config.getslpt(Rsmooth)
+        sxl,syl,szl = config.getslpt()
+
+    gxl = -np.gradient(sxl)[0]
+    gyl = -np.gradient(syl)[1]
+    gzl = -np.gradient(szl)[2]
+
+    gxf = -np.gradient(sxf)[0]
+    gyf = -np.gradient(syf)[1]
+    gzf = -np.gradient(szf)[2]
+
+    gxd = -np.gradient(sxd)[0]
+    gyd = -np.gradient(syd)[1]
+    gzd = -np.gradient(szd)[2]
+
+    grads = False
+    if grads:
+        dyd = (gyd - gyl)[si,sj,sk].mean(axis=0)
+        dyf = (gyf - gyl)[si,sj,sk].mean(axis=0)
+
+        dzd = (gzd - gzl)[si,sj,sk].mean(axis=0)
+        dzf = (gzf - gzl)[si,sj,sk].mean(axis=0)
+    else:
+        dyd = np.log10(1/abs(syd - syl)[si,sj,sk].mean(axis=0))
+        dyf = np.log10(1/abs(syf - syl)[si,sj,sk].mean(axis=0))
+
+        dzd = np.log10(1/abs(szd - szl)[si,sj,sk].mean(axis=0))
+        dzf = np.log10(1/abs(szf - szl)[si,sj,sk].mean(axis=0))
+
+    divl = (gxl + gyl + gzl)[si,sj,sk].mean(axis=0)
+    divd = (gxd + gyd + gzd)[si,sj,sk].mean(axis=0)
+    divf = (gxf + gyf + gzf)[si,sj,sk].mean(axis=0)
+
+    gxl = gxl[si,sj,sk].mean(axis=0)
+    gyl = gyl[si,sj,sk].mean(axis=0)
+    gzl = gzl[si,sj,sk].mean(axis=0)
+
+    gxf = gxf[si,sj,sk].mean(axis=0)
+    gyf = gyf[si,sj,sk].mean(axis=0)
+    gzf = gzf[si,sj,sk].mean(axis=0)
+
+    gxd = gxd[si,sj,sk].mean(axis=0)
+    gyd = gyd[si,sj,sk].mean(axis=0)
+    gzd = gzd[si,sj,sk].mean(axis=0)
+
+    #ddi = config.loadfield('deltai',scalegrowth=True )[si,sj,sk].mean(axis=0)
     rholpt = np.array(rholpt)
     rhopfl = np.array(rhopfl)
 
     rms = np.log10(rhodmg[rhodmg>0]).var()**0.5
     mean = np.log10(rhodmg[rhodmg>0]).mean()
     if fmax is None:
-        fmax = 10.**(mean+3*rms)
+        fmax = 10.**(mean+4*rms)
     if fmin is None:
         fmin = 10.**(mean-1*rms)
 
@@ -122,29 +250,30 @@ def analyze(config,params,rhopfl,mask,fmin=None,fmax=None,opt=False):
     rhodmg[rhodmg<minrd]=minrd
 
     axes[2].imshow(mask,               vmin=minmk,vmax=maxmk ,extent=extent,cmap=cmapmk)
-    axes[3].imshow(rholpt,norm=LogNorm(vmin=minrl,vmax=maxrl),extent=extent,cmap=cmaprl)
-    axes[4].imshow(rhopfl,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
-    axes[5].imshow(rhodmg,norm=LogNorm(vmin=minrd,vmax=maxrd),extent=extent,cmap=cmaprd)
+    # axes[3].imshow(rholpt,norm=LogNorm(vmin=minrl,vmax=maxrl),extent=extent,cmap=cmaprl)
 
-    paramtag = f'{config.N}_k{config.kmax}'
-    prefix   = 'comp_' + paramtag 
+    fd0=-dyd.max()
+    fd1=dyd.max()
+    fg0=-1.0
+    fg1=1.0
+    cmaps = 'viridis'
+    # axes[0].imshow(dyf,                vmin=fd0, vmax=fd1  ,extent=extent,cmap=cmaps)
+    # axes[3].imshow(gyl,                vmin=fg0, vmax=fg1  ,extent=extent,cmap=cmaps)
+    # axes[6].imshow(dyd,                vmin=fd0, vmax=fd1  ,extent=extent,cmap=cmaps)
 
-    if opt:
-        prefix += "_opt"
-    else:
-        prefix += "_fid"
+    axes[3].imshow(divl, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
+    axes[4].imshow(divf, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
+    axes[5].imshow(divd, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
 
-    figdir  = "./figures/"
-    datadir = "./data/"
+    axes[6].imshow(rholpt,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
+    axes[7].imshow(rhopfl,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
+    axes[8].imshow(rhodmg,norm=LogNorm(vmin=minrd,vmax=maxrd),extent=extent,cmap=cmaprd)
+    figdir  = f"./figures/"
 
     pathlib.Path( figdir).mkdir(parents=True, exist_ok=True) 
-    pathlib.Path(datadir).mkdir(parents=True, exist_ok=True) 
-
-    figfile  =  figdir + prefix + ".png"
-    datafile = datadir + prefix
+    figfile  =  figdir + f"{datastring}.png"
 
     print(f"\n  figure saved to {figfile}")
     plt.savefig(figfile,bbox_inches='tight',dpi=100)
 
-    print(f"    data saved to {datafile}.npz\n")
-    np.savez(datafile,rholpt=rholpt,mask=mask,rhopfl=rhopfl,rhodmg=config.rhodmg)
+    plt.close('all')
