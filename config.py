@@ -57,6 +57,8 @@ class PTflowConfig:
         sprms = kwargs.get('sprms',pfd.cparams['sprms'])
         gprms = kwargs.get('gprms',pfd.cparams['gprms'])
 
+        # turn off sampling when doing gradient descent optimization
+        if self.gradopt: self.sampl = False
         if N % 2 == 0:
             i0=N//2-nx//2-1
             j0=N//2-ny//2-1
