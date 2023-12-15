@@ -28,18 +28,19 @@ def reportgrads(params,pnames,grads,loss,step,i):
 def optfromgrad(config,params):
     config.verbose = False
 
-    dloss = 1e10
-    loss = 1e10
     gamma = 1e-3
-    i = 0
+    maxfail = 5
+    gradmin = 1e-8
+
     losses=np.empty(0,dtype=np.float32)
     grads=np.empty(0,dtype=np.float32)
     gparams=np.empty(0,dtype=np.float32)
     oldparams={}
     oldgrad={}
     minloss=1e10
-    gamma0 = gamma
-    maxfail = 5
+    dloss = 1e10
+    loss = 1e10
+    i = 0
     ifail=0
     while i<30 or ifail < maxfail:
         cparams,fparams,pparams,params = ptf.parseallparams(params)
@@ -76,6 +77,7 @@ def optfromgrad(config,params):
         for pname in config.goptprms:
             oldparams[pname]  = params[pname]
             oldgrad[pname] = lossgrad[pname]
+            if abs(lossgrad[pname]) < gradmin: continue
             step = loss/lossgrad[pname]**2
             if step < minstep:
                 minstep = step

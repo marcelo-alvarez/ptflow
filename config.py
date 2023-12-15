@@ -145,8 +145,11 @@ class PTflowConfig:
 
         # parameter bounds and optimization subsets
         self.pbounds = pfd.pbounds
+        if gprms == 'all':
+            self.goptprms = list(pfd.fparams.keys())
+        else:
+            self.goptprms = [s.strip() for s in gprms.split(",")]
         self.soptprms = [s.strip() for s in sprms.split(",")]
-        self.goptprms = [s.strip() for s in gprms.split(",")]
 
         # sbox coordinate array for boundary padding
         self.xyz = jnp.asarray(jnp.meshgrid(jnp.arange(self.sboxdims[0]),jnp.arange(self.sboxdims[1]),jnp.arange(self.sboxdims[2]),indexing='ij'),dtype=jnp.int32)

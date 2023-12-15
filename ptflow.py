@@ -109,10 +109,6 @@ def getRfuncs(config, params):
     nu    = deltac / sigmaR
     lF    = jnp.log10(erfc(nu/jnp.sqrt(2)))
 
-    print(f"sigmaR={sigmaR}")
-    print(f"deltac={deltac}")
-    print(f"    lF={lF}")
-
     lFoflR = lambda lr: sortedinterp(lr,lR,lF)
     lRoflF = lambda lf: sortedinterp(lf,lF,lR)
 
@@ -128,7 +124,6 @@ def getRfuncs(config, params):
         params['lfcoll1']=lfcoll1
         params['lfcoll2']=lfcoll2
 
-    #print(f"lR1 lR2 fcoll1, fcoll2, sigma1, sigma2: {lR1} {lR2} {params['lfcoll1']} {params['lfcoll2']} {params['sigma1']} {params['sigma2']}")
     return lFoflR, lRoflF, params
 
 def setscales(config, params):
@@ -225,9 +220,6 @@ def particleloss(config,params,xfl,yfl,zfl):
     nby1 = params['nby'][0,1]
     nbz1 = params['nbz'][0,1]
 
-    #print(f"npx0,nby0,nbz0 = {nbx0} {nby0} {nbz0}")
-    #print(f"npx1,nby1,nbz1 = {nbx1} {nby1} {nbz1}")
-
     x = config.xyz[0] ; y = config.xyz[1] ; z = config.xyz[2]
 
     r0 = config.dsub
@@ -235,18 +227,12 @@ def particleloss(config,params,xfl,yfl,zfl):
     dy  = (yfl-config.dmposy)/r0
     dz  = (zfl-config.dmposz)/r0
 
-    #print(f"mins: {xfl.min()} {yfl.min()} {zfl.min()}")
-    #print(f"maxs: {xfl.max()} {yfl.max()} {zfl.max()}")
-
     loss = modhuber(dx**2+dy**2+dz**2)*config.dmposd
 
-    #print(f"loss before: {loss.mean()}")
     loss *= (heaviright(x-nbx0,soft=config.soft)*heaviright(y-nby0,soft=config.soft)
                *heaviright(z-nbz0,soft=config.soft))
-    #print(f"loss after nb0: {loss.mean()}")
     loss *= (heaviright(nbx1-x,soft=config.soft)*heaviright(nby1-y,soft=config.soft)
                *heaviright(nbz1-z,soft=config.soft))
-    #print(f"loss after nb1: {loss.mean()}")
 
     return loss.mean()
 
@@ -437,8 +423,6 @@ def particleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
     xc = x0 + dx                         ; del dx ; gc.collect()
     xf = xc * flowing + xf * (1-flowing) ; del xc ; gc.collect()
 
-    #print(f"{Rsmooth} {xf.min()}")
-
     dy = flow * (convolve(ys*cfield, RLagpix, norm=False) / count - y0) * flowweight
     yc = y0 + dy                         ; del dy ; gc.collect()
     yf = yc * flowing + yf * (1-flowing) ; del yc ; gc.collect()
@@ -512,9 +496,6 @@ def flowall(config,params,cfields,lfcolls,xf,yf,zf):
 
     # iterate over flow scales
     for i in range(config.nsc):
-        #print(f"i:    {i}")
-        #print(f"mins: {xf.min()} {yf.min()} {zf.min()}")
-        #print(f"maxs: {xf.max()} {yf.max()} {zf.max()}")
         xf,yf,zf = flowstep(config,params,i,cfields,lfcolls,xf,yf,zf)
     if config.verbose: print()
 
