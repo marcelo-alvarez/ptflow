@@ -401,7 +401,7 @@ def getcfield(config, params, i, cfields, mask):
     mask = jnp.asarray(mask,dtype=config.masktype)
 
     return cfields, mask, lfcoll
-getcfield = jax.jit(getcfield,static_argnums=[0,])
+#getcfield = jax.jit(getcfield,static_argnums=[0,])
 
 def particleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
 
@@ -466,7 +466,7 @@ def particleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
     zf = zc * flowing + zf * (1-flowing) ; del zc ; gc.collect()
  
     return xf,yf,zf
-particleflow = jax.jit(particleflow,static_argnums=[0,])
+#particleflow = jax.jit(particleflow,static_argnums=[0,])
 
 def scaleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
 
@@ -486,7 +486,7 @@ def scaleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
     xf,yf,zf = particleflow(config,params,i,cfield,lfcolls,xf,yf,zf)
 
     return xf,yf,zf
-scaleflow = jax.jit(scaleflow,static_argnums=[0,])
+#scaleflow = jax.jit(scaleflow,static_argnums=[0,])
 
 def cfieldstep(config,params,i,cfields,mask):
     t0 = time()
@@ -499,7 +499,7 @@ def cfieldstep(config,params,i,cfields,mask):
     nc = cfield.sum().astype(np.float32)
     if config.verbose:
         print(f"  threshold: {i+1:>4}/{config.nsc:<4} nc={nc} logM={np.log10(params['cmass'][i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={params['cRLag'][i]:<6.3f}                                     ",end='\r')
+              f"dt={time()-t0:<6.3f} RLag={params['cRLag'][i]:<6.3f}                                     ")
     return cfields, mask, lfcoll
 
 def flowstep(config,params,i,cfields,lfcolls,xf,yf,zf):
@@ -514,7 +514,7 @@ def flowstep(config,params,i,cfields,lfcolls,xf,yf,zf):
     if config.verbose:
         ls = ptfinterp(params,lfcolls[i],'lfcoll','ls')
         print(f"   dynamics: {i+1:>4}/{config.nsc:<4} nh={nc} logM={np.log10(params['fmass'][i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={params['fRLag'][i]:<6.3f} ls={ls}                             ",end='\r')
+              f"dt={time()-t0:<6.3f} RLag={params['fRLag'][i]:<6.3f} ls={ls}                             ")
     return xf,yf,zf
 
 def cfieldall(config,params,cfields,mask,lfcolls):
