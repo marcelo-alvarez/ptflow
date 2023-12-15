@@ -173,8 +173,25 @@ def setscales(config, params):
         params['cmass'] = data['cmass']
         params['fmass'] = data['fmass']
 
-        params['lfcoll1'] = lF1
-        params['lfcoll2'] = lF2
+        # enforce params['lfcoll1'] < params['lfcoll2']
+        if lF1 > lF2:
+            params['lfcoll1']=lF2
+            params['lfcoll2']=lF1
+        else:
+            params['lfcoll1']=lF1
+            params['lfcoll2']=lF2
+        delta = config.loadfield('deltai',scalegrowth=True).copy()
+
+        sigma1 = jnp.sqrt(convolve(delta,RofM(config,10**config.logM1)/config.dsub).var())
+        sigma2 = jnp.sqrt(convolve(delta,RofM(config,10**config.logM2)/config.dsub).var())
+
+        # enforce params['sigma1'] < params['sigma2']
+        if sigma1 > sigma2:
+            params['sigma1']=sigma2
+            params['sigma2']=sigma1
+        else:
+            params['sigma1']=sigma1
+            params['sigma2']=sigma2
 
     # sbox boundary padding to avoid artefacts
     params['nbx'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
