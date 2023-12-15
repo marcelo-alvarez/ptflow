@@ -13,6 +13,7 @@ def savedata(config,params,rhopfl,xf,yf,zf,mask,opt=False):
 
     paramtag = f'{config.N}_k{config.kmax}'
     datastring   = 'comp_' + paramtag
+    datastring = config.runname
 
     if opt:
         datastring += "_opt"

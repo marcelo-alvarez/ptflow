@@ -79,6 +79,7 @@ def getRfuncs(config, params):
     r0 = 1e-3
     for i in range(nR):
         s = jnp.sqrt(convolve(delta,Ri[i]/config.dsub).var())
+        #s = jnp.sqrt(convolve(delta,Ri[i]).var())
         if i == 0 or abs(2*(sp-s)/(sp+s)) > r0:
             R.append(Ri[i])
             sigmaR.append(s)
@@ -108,6 +109,12 @@ def getRfuncs(config, params):
     deltac = ptfinterp(params,sigma,'sigma','dt')
     nu    = deltac / sigmaR
     lF    = jnp.log10(erfc(nu/jnp.sqrt(2)))
+    deltac1 = ptfinterp(params,sigma1,'sigma','dt')
+    deltac2 = ptfinterp(params,sigma2,'sigma','dt')
+    print(f"deltac at sigma={sigma1}: {deltac1}")
+    print(f"deltac at sigma={sigma2}: {deltac2}")
+    print(f"1.62 + 0.67 * {sigma1}: {1.67+0.67*sigma1}")
+    print(f"1.62 + 0.67 * {sigma2}: {1.67+0.67*sigma2}")
 
     lFoflR = lambda lr: sortedinterp(lr,lR,lF)
     lRoflF = lambda lf: sortedinterp(lf,lF,lR)
@@ -133,6 +140,8 @@ def setscales(config, params):
     lM1 = config.logM1
     lM2 = config.logM2
 
+    lFoflR, lRoflF, params = getRfuncs(config, params)
+
     if config.spacing == "logM":
         mass = jnp.sort(jnp.logspace(lM1,lM2,config.nsc))
         params['cmass'] = jnp.flip(mass) if config.ctdwn else mass
@@ -142,8 +151,6 @@ def setscales(config, params):
         params['fRLag']  = RofM(config,params['fmass'])
 
     if config.spacing == "logF":
-
-        lFoflR, lRoflF, params = getRfuncs(config, params)
 
         lR1 = jnp.log10(RofM(config,10.**lM1))
         lR2 = jnp.log10(RofM(config,10.**lM2))
@@ -159,6 +166,15 @@ def setscales(config, params):
 
         params['cmass'] = MofR(config,params['cRLag'])
         params['fmass'] = MofR(config,params['fRLag'])
+
+        data = np.load("main-logF-fiducial.npz")
+        params['cRLag'] = data['cRLag']
+        params['fRLag'] = data['fRLag']
+        params['cmass'] = data['cmass']
+        params['fmass'] = data['fmass']
+
+        params['lfcoll1'] = lF1
+        params['lfcoll2'] = lF2
 
     # sbox boundary padding to avoid artefacts
     params['nbx'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
@@ -346,7 +362,8 @@ def getcfield(config, params, i, cfields, mask):
     deltasmooth = convolve(config.deltai, Rpix0, wfunc=collkernel)
     sigma  = jnp.sqrt(deltasmooth.var())
     deltac = ptfinterp(params,sigma,'sigma','dt')
-    cfield  = jnp.array(heaviright(deltasmooth,cen=deltac,scale=1e-4,soft=config.soft),
+    #cfield  = jnp.array(heaviright(deltasmooth,cen=deltac,scale=1e-4,soft=config.soft),
+    cfield  = jnp.array(heaviright(deltasmooth,cen=deltac,scale=1e-5*deltac,soft=config.soft),
                         dtype=config.cftype)
 
     if config.masking:
@@ -465,7 +482,7 @@ def cfieldstep(config,params,i,cfields,mask):
     nc = cfield.sum().astype(np.float32)
     if config.verbose:
         print(f"  threshold: {i+1:>4}/{config.nsc:<4} nc={nc} logM={np.log10(params['cmass'][i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={params['cRLag'][i]:<6.3f}",end='\r')
+              f"dt={time()-t0:<6.3f} RLag={params['cRLag'][i]:<6.3f}                                     ",end='\r')
     return cfields, mask, lfcoll
 
 def flowstep(config,params,i,cfields,lfcolls,xf,yf,zf):
@@ -478,8 +495,9 @@ def flowstep(config,params,i,cfields,lfcolls,xf,yf,zf):
     xf,yf,zf = scaleflow(config,params,i,cfield,lfcolls,xf,yf,zf)
 
     if config.verbose:
+        ls = ptfinterp(params,lfcolls[i],'lfcoll','ls')
         print(f"   dynamics: {i+1:>4}/{config.nsc:<4} nh={nc} logM={np.log10(params['fmass'][i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={params['fRLag'][i]:<6.3f}",end='\r')
+              f"dt={time()-t0:<6.3f} RLag={params['fRLag'][i]:<6.3f} ls={ls}                             ",end='\r')
     return xf,yf,zf
 
 def cfieldall(config,params,cfields,mask,lfcolls):

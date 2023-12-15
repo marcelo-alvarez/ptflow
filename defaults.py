@@ -62,8 +62,8 @@ fparams = {
     'dc0' : {'val' :  1.62, 'type' : float, 'desc' : '       deltac'}, 
     'dcp' : {'val' :  0.67, 'type' : float, 'desc' : 'd[deltac]/dsg'},
 
-    'dt1' : {'val' :  1.95, 'type' : float, 'desc' : ' d threshold1'},
-    'dt2' : {'val' :  4.41, 'type' : float, 'desc' : ' d threshold1'},
+    'dt1' : {'val' :  2.00, 'type' : float, 'desc' : ' d threshold1'},
+    'dt2' : {'val' :  4.21, 'type' : float, 'desc' : ' d threshold1'},
     'dtp' : {'val' :  1.00, 'type' : float, 'desc' : ' d thresholdp'},
 
     'ms1' : {'val' :  1.00, 'type' : float, 'desc' : ' mask smooth1'},
