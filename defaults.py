@@ -48,7 +48,7 @@ pbounds['pi'] = {'lower': -1.3, 'upper': -1.1, 'logscale' : False}
 pbounds['po'] = {'lower': -3.3, 'upper': -2.7, 'logscale' : False}
 pbounds['pe'] = {'lower': -2.0, 'upper': -0.5, 'logscale' : False}
 pbounds['d0'] = {'lower':  0.5, 'upper':    5, 'logscale' :  True}
-pbounds['fM'] = {'lower': 1.01, 'upper':  2.0, 'logscale' :  True}
+pbounds['fM'] = {'lower': 0.50, 'upper':  2.0, 'logscale' :  True}
 
 # cfield and flow parameters
 fparams = {
@@ -62,17 +62,17 @@ fparams = {
     'dc0' : {'val' :  1.62, 'type' : float, 'desc' : '       deltac'}, 
     'dcp' : {'val' :  0.67, 'type' : float, 'desc' : 'd[deltac]/dsg'},
 
-    'dt1' : {'val' :  2.00, 'type' : float, 'desc' : ' d threshold1'},
-    'dt2' : {'val' :  4.21, 'type' : float, 'desc' : ' d threshold1'},
+    'dt1' : {'val' :  1.97, 'type' : float, 'desc' : ' d threshold1'},
+    'dt2' : {'val' :  4.14, 'type' : float, 'desc' : ' d threshold1'},
     'dtp' : {'val' :  1.00, 'type' : float, 'desc' : ' d thresholdp'},
 
     'ms1' : {'val' :  1.00, 'type' : float, 'desc' : ' mask smooth1'},
     'ms2' : {'val' :  1.00, 'type' : float, 'desc' : ' mask smooth2'},
     'msp' : {'val' :  1.00, 'type' : float, 'desc' : ' mask smoothp'},
 
-    'ls1' : {'val' :  0.71, 'type' : float, 'desc' : '  lpt smooth1'},
-    'ls2' : {'val' :  1.76, 'type' : float, 'desc' : '  lpt smooth2'},
-    'lsp' : {'val' :  2.00, 'type' : float, 'desc' : '  lpt smoothp'},
+    'ls1' : {'val' :  1.29, 'type' : float, 'desc' : '  lpt smooth1'},
+    'ls2' : {'val' :  1.74, 'type' : float, 'desc' : '  lpt smooth2'},
+    'lsp' : {'val' :  1.02, 'type' : float, 'desc' : '  lpt smoothp'},
 
     'fw1' : {'val' :  1.00, 'type' : float, 'desc' : ' flow weight1'},
     'fw2' : {'val' :  1.00, 'type' : float, 'desc' : ' flow weight2'},
@@ -84,12 +84,12 @@ fparams = {
 pbounds['dc0'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
 pbounds['dcp'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
 
-pbounds['ls1'] = {'lower': 0.8, 'upper': 1.2, 'logscale' : True}
-pbounds['ls2'] = {'lower': 0.3, 'upper': 1.0, 'logscale' : True}
+pbounds['ls1'] = {'lower': 0.8, 'upper': 2.0, 'logscale' : True}
+pbounds['ls2'] = {'lower': 0.8, 'upper': 2.0, 'logscale' : True}
 pbounds['lsp'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
 
-pbounds['ms1'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
-pbounds['ms2'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
+pbounds['ms1'] = {'lower': 0.1, 'upper': 0.7, 'logscale' : True}
+pbounds['ms2'] = {'lower': 0.1, 'upper': 0.7, 'logscale' : True}
 pbounds['msp'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
 
 pbounds['fw1'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
@@ -98,7 +98,7 @@ pbounds['fwp'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
 
 pbounds['dt1'] = {'lower': 0.9, 'upper': 1.1, 'logscale' : True}
 pbounds['dt2'] = {'lower': 0.9, 'upper': 1.1, 'logscale' : True}
-pbounds['dtp'] = {'lower': 0.5, 'upper': 2.0, 'logscale' : True}
+pbounds['dtp'] = {'lower': 0.9, 'upper': 1.1, 'logscale' : True}
 
 # all parameters
 allparams = {

@@ -72,14 +72,13 @@ def getRfuncs(config, params):
     R1 = RofM(config,10**config.logM1/2)
     R2 = RofM(config,10**config.logM2*2)
     nR   = 200
-    Ri   = jnp.linspace(R1,R2,nR)
+    Ri   = jnp.logspace(np.log10(R1),np.log10(R2),nR)
     sigmaR = [] #np.zeros(nR,dtype=jnp.float32)
     R = []
     sp = 0
     r0 = 1e-3
     for i in range(nR):
         s = jnp.sqrt(convolve(delta,Ri[i]/config.dsub).var())
-        #s = jnp.sqrt(convolve(delta,Ri[i]).var())
         if i == 0 or abs(2*(sp-s)/(sp+s)) > r0:
             R.append(Ri[i])
             sigmaR.append(s)
@@ -111,10 +110,6 @@ def getRfuncs(config, params):
     lF    = jnp.log10(erfc(nu/jnp.sqrt(2)))
     deltac1 = ptfinterp(params,sigma1,'sigma','dt')
     deltac2 = ptfinterp(params,sigma2,'sigma','dt')
-    print(f"deltac at sigma={sigma1}: {deltac1}")
-    print(f"deltac at sigma={sigma2}: {deltac2}")
-    print(f"1.62 + 0.67 * {sigma1}: {1.67+0.67*sigma1}")
-    print(f"1.62 + 0.67 * {sigma2}: {1.67+0.67*sigma2}")
 
     lFoflR = lambda lr: sortedinterp(lr,lR,lF)
     lRoflF = lambda lf: sortedinterp(lf,lF,lR)
@@ -167,19 +162,6 @@ def setscales(config, params):
         params['cmass'] = MofR(config,params['cRLag'])
         params['fmass'] = MofR(config,params['fRLag'])
 
-        data = np.load("main-logF-fiducial.npz")
-        params['cRLag'] = data['cRLag']
-        params['fRLag'] = data['fRLag']
-        params['cmass'] = data['cmass']
-        params['fmass'] = data['fmass']
-
-        # enforce params['lfcoll1'] < params['lfcoll2']
-        if lF1 > lF2:
-            params['lfcoll1']=lF2
-            params['lfcoll2']=lF1
-        else:
-            params['lfcoll1']=lF1
-            params['lfcoll2']=lF2
         delta = config.loadfield('deltai',scalegrowth=True).copy()
 
         sigma1 = jnp.sqrt(convolve(delta,RofM(config,10**config.logM1)/config.dsub).var())
@@ -193,12 +175,33 @@ def setscales(config, params):
             params['sigma1']=sigma1
             params['sigma2']=sigma2
 
+        deltac1 = ptfinterp(params,sigma1,'sigma','dt')
+        deltac2 = ptfinterp(params,sigma2,'sigma','dt')
+
+        nu1    = deltac1 / sigma1
+        nu2    = deltac2 / sigma2
+
+        lfcoll1 = jnp.log10(erfc(nu1/jnp.sqrt(2)))
+        lfcoll2 = jnp.log10(erfc(nu2/jnp.sqrt(2)))
+
+        # enforce params['lfcoll1'] < params['lfcoll2']
+        if lfcoll1 > lfcoll2:
+            params['lfcoll1']=lfcoll2
+            params['lfcoll2']=lfcoll1
+        else:
+            params['lfcoll1']=lfcoll1
+            params['lfcoll2']=lfcoll2
+
+    config.Rbuff = -1e10
     # sbox boundary padding to avoid artefacts
     params['nbx'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
     params['nby'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
     params['nbz'] = jnp.zeros((config.nsc,2),dtype=jnp.int32)
     for i in range(config.nsc):
-        ntophat = (params['fRLag'][i]/config.dsub).astype(int)+1
+        RLag = params['fRLag'][i]
+        Rbuff = 2 * RLag * ptfinterp(params,lFoflR(np.log10(RLag)),'lfcoll','ls')
+        if Rbuff > config.Rbuff: config.Rbuff = Rbuff
+        ntophat = (Rbuff/config.dsub).astype(int)+1
         params['nbx'] = params['nbx'].at[i,0].set(min(ntophat,config.sboxdims[0]//2-1))
         params['nby'] = params['nby'].at[i,0].set(min(ntophat,config.sboxdims[1]//2-1))
         params['nbz'] = params['nbz'].at[i,0].set(min(ntophat,config.sboxdims[2]//2-1))
@@ -400,8 +403,8 @@ def getcfield(config, params, i, cfields, mask):
     cfields = jnp.asarray(cfields,dtype=config.cftype)
     mask = jnp.asarray(mask,dtype=config.masktype)
 
-    return cfields, mask, lfcoll
-#getcfield = jax.jit(getcfield,static_argnums=[0,])
+    return cfields, mask, lfcoll, deltac
+getcfield = jax.jit(getcfield,static_argnums=[0,])
 
 def particleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
 
@@ -466,9 +469,9 @@ def particleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
     zf = zc * flowing + zf * (1-flowing) ; del zc ; gc.collect()
  
     return xf,yf,zf
-#particleflow = jax.jit(particleflow,static_argnums=[0,])
+particleflow = jax.jit(particleflow,static_argnums=[0,])
 
-def scaleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
+def scaleflow(config,params,i,cfield,lfcolls,xf,yf,zf,buffer=False):
 
     # remove cfield within specified distance of boundary to avoid wrapping artefacts
     nbx0 = params['nbx'][i,0]
@@ -477,29 +480,33 @@ def scaleflow(config,params,i,cfield,lfcolls,xf,yf,zf):
     nbx1 = params['nbx'][i,1]
     nby1 = params['nby'][i,1]
     nbz1 = params['nbz'][i,1]
+
     x = config.xyz[0] ; y = config.xyz[1] ; z = config.xyz[2]
-    cfield *= (heaviright(x-nbx0,soft=config.soft)*heaviright(y-nby0,soft=config.soft)
-               *heaviright(z-nbz0,soft=config.soft))
-    cfield *= (heaviright(nbx1-x,soft=config.soft)*heaviright(nby1-y,soft=config.soft)
-               *heaviright(nbz1-z,soft=config.soft))
+
+    if buffer:
+        cfield *= (heaviright(x-nbx0,soft=config.soft)*heaviright(y-nby0,soft=config.soft)
+                *heaviright(z-nbz0,soft=config.soft))
+        cfield *= (heaviright(nbx1-x,soft=config.soft)*heaviright(nby1-y,soft=config.soft)
+                *heaviright(nbz1-z,soft=config.soft))
 
     xf,yf,zf = particleflow(config,params,i,cfield,lfcolls,xf,yf,zf)
 
     return xf,yf,zf
-#scaleflow = jax.jit(scaleflow,static_argnums=[0,])
+scaleflow = jax.jit(scaleflow,static_argnums=[0,],static_argnames=["buffer",])
 
 def cfieldstep(config,params,i,cfields,mask):
     t0 = time()
     cfieldsi = cfields.copy()
     maski = mask.copy()
 
-    cfields, mask, lfcoll = getcfield(config,params,i,cfields,mask)
+    cfields, mask, lfcoll, deltac = getcfield(config,params,i,cfields,mask)
 
     cfield = tophat(cfields,cen=i+1,width=0.1,soft=config.soft)
     nc = cfield.sum().astype(np.float32)
     if config.verbose:
         print(f"  threshold: {i+1:>4}/{config.nsc:<4} nc={nc} logM={np.log10(params['cmass'][i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={params['cRLag'][i]:<6.3f}                                     ")
+              f"dt={time()-t0:<6.3f} RLag={params['cRLag'][i]:<6.3f}",
+              end='\r')
     return cfields, mask, lfcoll
 
 def flowstep(config,params,i,cfields,lfcolls,xf,yf,zf):
@@ -514,7 +521,8 @@ def flowstep(config,params,i,cfields,lfcolls,xf,yf,zf):
     if config.verbose:
         ls = ptfinterp(params,lfcolls[i],'lfcoll','ls')
         print(f"   dynamics: {i+1:>4}/{config.nsc:<4} nh={nc} logM={np.log10(params['fmass'][i]):<5.2f} "+
-              f"dt={time()-t0:<6.3f} RLag={params['fRLag'][i]:<6.3f} ls={ls}                             ")
+              f"dt={time()-t0:<6.3f} RLag={params['fRLag'][i]:<6.3f}",
+              end='\r')
     return xf,yf,zf
 
 def cfieldall(config,params,cfields,mask,lfcolls):
@@ -536,17 +544,6 @@ def flowall(config,params,cfields,lfcolls,xf,yf,zf):
 
     return xf,yf,zf
 
-def cfieldflowall(config,params,cfields,mask,xf,yf,zf,lfcolls):
-    # iterate over cfield scales
-    for i in range(config.nsc):
-        cfields,mask,lfcoll = cfieldstep(config,params,i,cfields,mask)
-        lfcolls.append(lfcoll)
-        lfcollsa = jnp.asarray(lfcolls)
-        xf,yf,zf = flowstep(config,params,i,cfields,lfcollsa,xf,yf,zf)
-    if config.verbose: print()
-
-    return xf,yf,zf,mask
-
 def fullflow(config,params):
 
     # cfield = 1 --> convergence point
@@ -563,13 +560,12 @@ def fullflow(config,params):
     # config.ctdwn --> cfield field starting from smoothed on largest scales first [default]
     # config.ftdwn -->   flow field starting from smoothed on largest scales first [default]
 
-    # if ordering between cfield and flow is different, run cfield and flow separately
-    if config.ctdwn != config.ftdwn or config.ctdwn == config.ftdwn:
-        cfields,mask,lfcolls = cfieldall(config,params,cfields,mask,lfcolls)
-        lfcolls = jnp.asarray(lfcolls)
-        xf,yf,zf = flowall(config,params,cfields,lfcolls,xf,yf,zf)
-    else:
-        xf,yf,zf,mask = cfieldflowall(config,params,cfields,mask,xf,yf,zf,lfcolls)
+    cfields,mask,lfcolls = cfieldall(config,params,cfields,mask,lfcolls)
+    lfcolls = jnp.asarray(lfcolls)
+    # if ordering between cfield and flow is different, reverse order of lfcolls
+    if config.ctdwn != config.ftdwn:
+        lfcolls = jnp.flip(lfcolls)
+    xf,yf,zf = flowall(config,params,cfields,lfcolls,xf,yf,zf)
 
     rhopfl = config.binpoints(xf,yf,zf)
 

@@ -50,9 +50,6 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
 
     fmin = fmax = None
 
-    loss = ptf.particleloss(config,params,xf,yf,zf)
-    print(f"loss = {loss}")
-
     plt.rcParams['figure.figsize']    = [10, 5]
     plt.rcParams["contour.linewidth"] = 0.5
 
@@ -63,15 +60,28 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
 
     kmax = config.kmax
 
-    ncol=3; nrow=3
+    ncol=3; nrow=2
     fig, axes = plt.subplots(nrow,ncol,figsize=(8,8),gridspec_kw={'wspace': -0.3, 'hspace': 0.1})
     axes = axes.ravel()
     fig.set_size_inches(18.5, 10.5, forward=True)
 
-    dx = (config.sbox[0][1]-config.sbox[0][0])*zoomx
-    dy = (config.sbox[1][1]-config.sbox[1][0])*zoom
-    dz = (config.sbox[2][1]-config.sbox[2][0])*zoom
+    dsubx = (config.sbox[0][1]-config.sbox[0][0])
+    dsuby = (config.sbox[1][1]-config.sbox[1][0])
+    dsubz = (config.sbox[2][1]-config.sbox[2][0])
 
+    dx = dsubx * zoomx
+    dy = dsuby * zoom
+    dz = dsubz * zoom
+
+    # buffx = (1-zoomx)/2 * dsubx
+    # buffy = (1-zoom )/2 * dsuby
+    # buffz = (1-zoom )/2 * dsubz
+
+    # print(config.Rbuff,buffx,buffy,buffz)
+    # if buffx < 2 * config.Rbuff: dx = dsubx - 4 * config.Rbuff
+    # if buffy < 2 * config.Rbuff: dy = dsuby - 4 * config.Rbuff
+    # if buffz < 2 * config.Rbuff: dz = dsubz - 4 * config.Rbuff
+    # print(dsubx,4*config.Rbuff,dx)
     xc = 0.5 * (config.sbox[0][0]+config.sbox[0][1])
     yc = 0.5 * (config.sbox[1][0]+config.sbox[1][1])
     zc = 0.5 * (config.sbox[2][0]+config.sbox[2][1])
@@ -109,7 +119,6 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
     xd = config.fields['dmposx']['data']
     yd = config.fields['dmposy']['data']
     zd = config.fields['dmposz']['data']
-
 
     deltai = deltai[si,sj,sk].mean(axis=0)
     mask   =   mask[si,sj,sk].mean(axis=0)
@@ -211,34 +220,41 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
     # convert k from pixel units [0:npixel] to wavenumbers h/Mpc
     k = k * 2*np.pi / dy
 
+    rcax = 0
+    clax = 3
+    vfax = 1
+    vdax = 2
+    dfax = 4
+    ddax = 5
+
     # cross-correlation coefficient
-    axes[0].plot(k, r_dl,c='k',ls=':',lw=3,label="dm-lpt")
-    axes[0].plot(k, r_dh,c='k',ls='-',lw=3,label="dm-hfl")
+    axes[rcax].plot(k, r_dl,c='k',ls=':',lw=3,label="dm-lpt")
+    axes[rcax].plot(k, r_dh,c='k',ls='-',lw=3,label="dm-hfl")
 
-    axes[0].set_xscale('log')
-    axes[0].set_ylim((-0.4,1.1))
-    axes[0].set_xlim((0.05,40))
-    axes[0].set_aspect(1.0/axes[0].get_data_ratio(),adjustable='box')
+    axes[rcax].set_xscale('log')
+    axes[rcax].set_ylim((-0.4,1.1))
+    axes[rcax].set_xlim((0.05,40))
+    axes[rcax].set_aspect(1.0/axes[rcax].get_data_ratio(),adjustable='box')
 
-    axes[0].legend()
+    axes[rcax].legend()
 
     # power spectra
-    axes[1].plot(k, cl_dmg,c='k',ls='-',lw=3,label="dm")
-    axes[1].plot(k, cl_hfl,c='r',ls='-',lw=3,label="hfl")
-    axes[1].plot(k, cl_lpt,c='r',ls=':',lw=3,label="lpt")
+    axes[clax].plot(k, cl_dmg,c='k',ls='-',lw=3,label="dm")
+    axes[clax].plot(k, cl_hfl,c='r',ls='-',lw=3,label="hfl")
+    axes[clax].plot(k, cl_lpt,c='r',ls=':',lw=3,label="lpt")
 
     ploss = abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg * (1.-r_dh**2) / k**1.5 * 20
     ploss *= heavileft(k,cen=kmax,soft=config.soft)
 
-    #axes[1].plot(k,ploss.cumsum()/1e6)
+    #axes[clax].plot(k,ploss.cumsum()/1e6)
 
-    axes[1].set_xscale('log')
-    axes[1].set_yscale('log')
-    axes[1].set_ylim((1e-6,5))
-    axes[1].set_xlim((0.05,40))
-    axes[1].set_aspect(1.0/axes[1].get_data_ratio(),adjustable='box')
+    axes[clax].set_xscale('log')
+    axes[clax].set_yscale('log')
+    axes[clax].set_ylim((1e-6,5))
+    axes[clax].set_xlim((0.05,40))
+    axes[clax].set_aspect(1.0/axes[clax].get_data_ratio(),adjustable='box')
 
-    axes[1].legend()
+    axes[clax].legend()
 
     # images
 
@@ -250,7 +266,7 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
     rhopfl[rhopfl<minrh]=minrh
     rhodmg[rhodmg<minrd]=minrd
 
-    axes[2].imshow(mask,               vmin=minmk,vmax=maxmk ,extent=extent,cmap=cmapmk)
+    #axes[2].imshow(mask,               vmin=minmk,vmax=maxmk ,extent=extent,cmap=cmapmk)
     # axes[3].imshow(rholpt,norm=LogNorm(vmin=minrl,vmax=maxrl),extent=extent,cmap=cmaprl)
 
     fd0=-dyd.max()
@@ -262,13 +278,13 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
     # axes[3].imshow(gyl,                vmin=fg0, vmax=fg1  ,extent=extent,cmap=cmaps)
     # axes[6].imshow(dyd,                vmin=fd0, vmax=fd1  ,extent=extent,cmap=cmaps)
 
-    axes[3].imshow(divl, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
-    axes[4].imshow(divf, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
-    axes[5].imshow(divd, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
+    #axes[3].imshow(divl, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
+    axes[vfax].imshow(divf, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
+    axes[vdax].imshow(divd, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
 
-    axes[6].imshow(rholpt,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
-    axes[7].imshow(rhopfl,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
-    axes[8].imshow(rhodmg,norm=LogNorm(vmin=minrd,vmax=maxrd),extent=extent,cmap=cmaprd)
+    #axes[6].imshow(rholpt,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
+    axes[dfax].imshow(rhopfl,norm=LogNorm(vmin=minrh,vmax=maxrh),extent=extent,cmap=cmaprh)
+    axes[ddax].imshow(rhodmg,norm=LogNorm(vmin=minrd,vmax=maxrd),extent=extent,cmap=cmaprd)
     figdir  = f"./figures/"
 
     pathlib.Path( figdir).mkdir(parents=True, exist_ok=True) 
