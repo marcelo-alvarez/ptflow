@@ -220,10 +220,11 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
     # convert k from pixel units [0:npixel] to wavenumbers h/Mpc
     k = k * 2*np.pi / dy
 
-    rcax = 0
-    clax = 3
+    # clax = 0
+    vlax = 0
     vfax = 1
     vdax = 2
+    rcax = 3
     dfax = 4
     ddax = 5
 
@@ -239,22 +240,22 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
     axes[rcax].legend()
 
     # power spectra
-    axes[clax].plot(k, cl_dmg,c='k',ls='-',lw=3,label="dm")
-    axes[clax].plot(k, cl_hfl,c='r',ls='-',lw=3,label="hfl")
-    axes[clax].plot(k, cl_lpt,c='r',ls=':',lw=3,label="lpt")
+    # axes[clax].plot(k, cl_dmg,c='k',ls='-',lw=3,label="dm")
+    # axes[clax].plot(k, cl_hfl,c='r',ls='-',lw=3,label="hfl")
+    # axes[clax].plot(k, cl_lpt,c='r',ls=':',lw=3,label="lpt")
 
-    ploss = abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg * (1.-r_dh**2) / k**1.5 * 20
-    ploss *= heavileft(k,cen=kmax,soft=config.soft)
+    # ploss = abs(np.log(cl_dmg)-np.log(cl_hfl)) / cl_dmg * (1.-r_dh**2) / k**1.5 * 20
+    # ploss *= heavileft(k,cen=kmax,soft=config.soft)
 
-    #axes[clax].plot(k,ploss.cumsum()/1e6)
+    # #axes[clax].plot(k,ploss.cumsum()/1e6)
 
-    axes[clax].set_xscale('log')
-    axes[clax].set_yscale('log')
-    axes[clax].set_ylim((1e-6,5))
-    axes[clax].set_xlim((0.05,40))
-    axes[clax].set_aspect(1.0/axes[clax].get_data_ratio(),adjustable='box')
+    # axes[clax].set_xscale('log')
+    # axes[clax].set_yscale('log')
+    # axes[clax].set_ylim((1e-6,5))
+    # axes[clax].set_xlim((0.05,40))
+    # axes[clax].set_aspect(1.0/axes[clax].get_data_ratio(),adjustable='box')
 
-    axes[clax].legend()
+    # axes[clax].legend()
 
     # images
 
@@ -278,7 +279,7 @@ def analyze(datastring,zoom=None,zoomx=None,bindm=False):
     # axes[3].imshow(gyl,                vmin=fg0, vmax=fg1  ,extent=extent,cmap=cmaps)
     # axes[6].imshow(dyd,                vmin=fd0, vmax=fd1  ,extent=extent,cmap=cmaps)
 
-    #axes[3].imshow(divl, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
+    axes[vlax].imshow(divl, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
     axes[vfax].imshow(divf, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
     axes[vdax].imshow(divd, vmin=fd0, vmax=fd1, extent=extent,cmap=cmaps)
 
